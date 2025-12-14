@@ -20,9 +20,7 @@ use nrf_sdc::{self as sdc, mpsl};
 use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::build_ble_stack;
-use rmk::config::{
-    BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig,
-};
+use rmk::config::{BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig};
 use rmk::controller::EventController as _;
 use rmk::controller::led_indicator::KeyboardIndicatorController;
 use rmk::futures::future::{join, join4};
@@ -31,9 +29,7 @@ use rmk::keyboard::Keyboard;
 use rmk::split::ble::central::{read_peripheral_addresses, scan_peripherals};
 use rmk::split::central::run_peripheral_manager;
 use rmk::types::action::EncoderAction;
-use rmk::{
-    HostResources, initialize_encoder_keymap_and_storage, run_rmk,
-};
+use rmk::{HostResources, initialize_encoder_keymap_and_storage, run_rmk};
 use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -148,7 +144,8 @@ async fn main(spawner: Spawner) {
     let storage_config = StorageConfig {
         start_addr: 0xA0000,
         num_sectors: 6,
-        clear_storage: false,
+        clear_storage: true,
+        clear_layout: true,
         ..Default::default()
     };
     let rmk_config = RmkConfig {
@@ -198,7 +195,7 @@ async fn main(spawner: Spawner) {
         join4(
             scan_peripherals(&stack, &peripheral_addrs),
             run_peripheral_manager::<ROW, COL, 0, 0, _>(0, &peripheral_addrs, &stack),
-            run_peripheral_manager::<ROW, COL, 6, 0, _>(1, &peripheral_addrs, &stack),
+            run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
             run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
         ),
     )

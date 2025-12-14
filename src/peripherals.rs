@@ -1,6 +1,9 @@
 #![no_std]
 #![no_main]
 
+#[macro_use]
+mod macros;
+
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
 use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pull};
@@ -141,49 +144,22 @@ async fn main(spawner: Spawner) {
     saadc.calibrate().await;
 
     #[cfg(feature = "peripheral_left")]
-    let (row_pins, col_pins) = {
-        let row_0 = Input::new(p.P1_00, Pull::Down);
-        let row_1 = Input::new(p.P0_11, Pull::Down);
-        let row_2 = Input::new(p.P1_04, Pull::Down);
-        let row_3 = Input::new(p.P1_06, Pull::Down);
+    let (row_pins, col_pins) = config_matrix_pins_nrf!(peripherals: p,
+        input: [P0_22, P0_24, P1_00, P0_11],
+        output:  [P0_31, P0_29, P0_02, P1_15, P1_13, P1_11]);
 
-        let col_0 = Output::new(p.P0_10, Level::Low, OutputDrive::Standard);
-        let col_1 = Output::new(p.P0_09, Level::Low, OutputDrive::Standard);
-        let col_2 = Output::new(p.P1_11, Level::Low, OutputDrive::Standard);
-        let col_3 = Output::new(p.P1_13, Level::Low, OutputDrive::Standard);
-        let col_4 = Output::new(p.P1_15, Level::Low, OutputDrive::Standard);
-        let col_5 = Output::new(p.P0_02, Level::Low, OutputDrive::Standard);
-
-        (
-            [row_0, row_1, row_2, row_3],
-            [col_0, col_1, col_2, col_3, col_4, col_5],
-        )
-    };
-    #[cfg(not(feature = "peripheral_left"))] // peripheral_right
-    let (row_pins, col_pins) = {
-        let row_0 = Input::new(p.P1_13, Pull::Down);
-        let row_1 = Input::new(p.P1_11, Pull::Down);
-        let row_2 = Input::new(p.P0_10, Pull::Down);
-        let row_3 = Input::new(p.P0_09, Pull::Down);
-
-        let col_0 = Output::new(p.P0_22, Level::Low, OutputDrive::Standard);
-        let col_1 = Output::new(p.P0_24, Level::Low, OutputDrive::Standard);
-        let col_2 = Output::new(p.P1_00, Level::Low, OutputDrive::Standard);
-        let col_3 = Output::new(p.P0_11, Level::Low, OutputDrive::Standard);
-        let col_4 = Output::new(p.P1_04, Level::Low, OutputDrive::Standard);
-        let col_5 = Output::new(p.P1_06, Level::Low, OutputDrive::Standard);
-
-        (
-            [row_0, row_1, row_2, row_3],
-            [col_0, col_1, col_2, col_3, col_4, col_5],
-        )
-    };
+    #[cfg(not(feature = "peripheral_left"))]
+    let (row_pins, col_pins) = config_matrix_pins_nrf!(peripherals: p,
+        input: [P0_22, P0_24, P1_00, P0_11],
+        output:  [P1_11, P1_13, P1_15, P0_02, P0_29, P0_31]);
 
     // Initialize flash
     // nRF52840's bootloader starts from 0xF4000(976K)
     let storage_config = StorageConfig {
         start_addr: 0xA0000, // 640K
         num_sectors: 32,     // 128K
+        // clear_storage: true,
+        // clear_layout: true,
         ..Default::default()
     };
     let flash = Flash::take(mpsl, p.NVMC);
@@ -194,17 +170,10 @@ async fn main(spawner: Spawner) {
     let mut matrix = Matrix::<_, _, _, ROW, { COL / 2 }, true>::new(row_pins, col_pins, debouncer);
 
     // Start
-    join3(
+    join(
         run_devices! (
             (matrix) => EVENT_CHANNEL, // Peripheral uses EVENT_CHANNEL to send events to central
         ),
-        async {
-            loop {
-                Timer::after_secs(1).await;
-                EVENT_CHANNEL.send(rmk::event::Event::Key(KeyboardEvent::key(0, 1, true)));
-                EVENT_CHANNEL.send(rmk::event::Event::Key(KeyboardEvent::key(0, 1, false)));
-            }
-        },
         #[cfg(feature = "peripheral_left")] // left
         run_rmk_split_peripheral(0, &stack, &mut storage),
         #[cfg(not(feature = "peripheral_left"))] // right

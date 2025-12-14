@@ -7,40 +7,32 @@ use keymap::{COL, NUM_LAYER, ROW};
 
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
-use embassy_nrf::gpio::{Input, Output};
-use embassy_nrf::interrupt::{self, InterruptExt};
+use embassy_nrf::gpio::Output;
 use embassy_nrf::mode::Async;
-use embassy_nrf::peripherals::{RNG, SAADC, USBD};
-use embassy_nrf::saadc::{self, AnyInput, Input as _, Saadc};
+use embassy_nrf::peripherals::{RNG, USBD};
+use embassy_nrf::saadc::{self};
 use embassy_nrf::usb::Driver;
 use embassy_nrf::usb::vbus_detect::HardwareVbusDetect;
-use embassy_nrf::{Peri, bind_interrupts, rng, usb};
+use embassy_nrf::{bind_interrupts, rng, usb};
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
 use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::build_ble_stack;
-use rmk::channel::EVENT_CHANNEL;
 use rmk::config::{
-    BehaviorConfig, BleBatteryConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig,
+    BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig,
 };
 use rmk::controller::EventController as _;
 use rmk::controller::led_indicator::KeyboardIndicatorController;
-use rmk::debounce::default_debouncer::DefaultDebouncer;
-use rmk::embassy_futures::join::join3;
 use rmk::futures::future::{join, join4};
 use rmk::input_device::Runnable;
-use rmk::input_device::adc::{AnalogEventType, NrfAdc};
-use rmk::input_device::battery::BatteryProcessor;
-use rmk::input_device::rotary_encoder::RotaryEncoder;
 use rmk::keyboard::Keyboard;
-use rmk::matrix::{Matrix, OffsetMatrixWrapper};
 use rmk::split::ble::central::{read_peripheral_addresses, scan_peripherals};
 use rmk::split::central::run_peripheral_manager;
 use rmk::types::action::EncoderAction;
 use rmk::{
-    HostResources, initialize_encoder_keymap_and_storage, run_devices, run_processor_chain, run_rmk,
+    HostResources, initialize_encoder_keymap_and_storage, run_rmk,
 };
 use static_cell::StaticCell;
 

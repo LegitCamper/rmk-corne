@@ -8,21 +8,26 @@ use embassy_nrf::interrupt::{self, InterruptExt};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, SAADC, USBD};
 use embassy_nrf::saadc::{self, AnyInput, Input as _, Saadc};
+use embassy_nrf::usb::vbus_detect::HardwareVbusDetect;
 use embassy_nrf::{Peri, bind_interrupts, rng, usb};
+use embassy_time::Timer;
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
 use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::build_ble_stack;
-use rmk::channel::EVENT_CHANNEL;
+use rmk::channel::{EVENT_CHANNEL, LED_SIGNAL};
 use rmk::config::StorageConfig;
 use rmk::debounce::default_debouncer::DefaultDebouncer;
+use rmk::embassy_futures::join::{join3, join4};
+use rmk::event::KeyboardEvent;
 use rmk::futures::future::join;
 use rmk::input_device::rotary_encoder::RotaryEncoder;
 use rmk::matrix::Matrix;
 use rmk::split::peripheral::run_rmk_split_peripheral;
 use rmk::storage::new_storage_for_split_peripheral;
+use rmk::types::led_indicator::LedIndicator;
 use rmk::{HostResources, run_devices};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -189,13 +194,20 @@ async fn main(spawner: Spawner) {
     let mut matrix = Matrix::<_, _, _, ROW, { COL / 2 }, true>::new(row_pins, col_pins, debouncer);
 
     // Start
-    join(
+    join3(
         run_devices! (
             (matrix) => EVENT_CHANNEL, // Peripheral uses EVENT_CHANNEL to send events to central
         ),
-        #[cfg(feature = "peripheral_left")]
+        async {
+            loop {
+                Timer::after_secs(1).await;
+                EVENT_CHANNEL.send(rmk::event::Event::Key(KeyboardEvent::key(0, 1, true)));
+                EVENT_CHANNEL.send(rmk::event::Event::Key(KeyboardEvent::key(0, 1, false)));
+            }
+        },
+        #[cfg(feature = "peripheral_left")] // left
         run_rmk_split_peripheral(0, &stack, &mut storage),
-        #[cfg(not(feature = "peripheral_left"))]
+        #[cfg(not(feature = "peripheral_left"))] // right
         run_rmk_split_peripheral(1, &stack, &mut storage),
     )
     .await;

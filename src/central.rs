@@ -2,6 +2,8 @@
 #![no_main]
 
 #[macro_use]
+mod macros;
+
 mod keymap;
 use keymap::{COL, NUM_LAYER, ROW};
 
@@ -160,7 +162,7 @@ async fn main(spawner: Spawner) {
     let mut behavior_config = BehaviorConfig::default();
     behavior_config.morse.enable_flow_tap = true;
     let mut key_config = PositionalConfig::default();
-    let mut encoder_config = [[EncoderAction::default(); 0]; 3];
+    let mut encoder_config = [[EncoderAction::default(); 0]; NUM_LAYER];
     let (keymap, mut storage) = initialize_encoder_keymap_and_storage::<_, ROW, COL, NUM_LAYER, 0>(
         &mut default_keymap,
         &mut encoder_config,

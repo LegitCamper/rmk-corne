@@ -1,3 +1,11 @@
+[env]
+RMK_RESET_ARG = { script = [
+  "if [ -n \"$RMK_RESET\" ]; then echo \"--features=reset\"; else echo \"--features=no_reset\"; fi"
+] }
+RMK_LOG_ARG = { script = [
+  "if [ -n \"$RMK_LOG\" ]; then echo \"--features=usb_logging\"; else echo \"--features=no_log\"; fi"
+] }
+
 [tasks.install-llvm-tools]
 install_crate = { rustup_component_name = "llvm-tools" }
 
@@ -17,6 +25,8 @@ args = [
   "--release",
   "--bin",
   "central",
+  "${RMK_RESET_ARG}",
+  "${RMK_LOG_ARG}",
   "--",
   "-O",
   "ihex",
@@ -37,6 +47,7 @@ args = [
   "peripheral_left",
   "--features",
   "peripheral_left",
+  "${RMK_RESET_ARG}",
   "--",
   "-O",
   "ihex",
@@ -57,6 +68,7 @@ args = [
   "peripheral_right",
   "--features",
   "peripheral_right",
+  "${RMK_RESET_ARG}",
   "--",
   "-O",
   "ihex",

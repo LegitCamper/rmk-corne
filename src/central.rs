@@ -146,7 +146,9 @@ async fn main(spawner: Spawner) {
     let storage_config = StorageConfig {
         start_addr: 0xA0000,
         num_sectors: 6,
+        #[cfg(feature = "reset")]
         clear_storage: true,
+        #[cfg(feature = "reset")]
         clear_layout: true,
         ..Default::default()
     };
@@ -162,7 +164,10 @@ async fn main(spawner: Spawner) {
     let mut behavior_config = BehaviorConfig::default();
     behavior_config.morse.enable_flow_tap = true;
     let mut key_config = PositionalConfig::default();
-    let mut encoder_config = [[EncoderAction::default(); 0]; NUM_LAYER];
+    let mut encoder_config = [{
+        EncoderAction::default();
+        [] as [EncoderAction; 0]
+    }; NUM_LAYER];
     let (keymap, mut storage) = initialize_encoder_keymap_and_storage::<_, ROW, COL, NUM_LAYER, 0>(
         &mut default_keymap,
         &mut encoder_config,

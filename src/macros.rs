@@ -1,3 +1,4 @@
+#[cfg(any(feature = "peripheral_left", feature = "peripheral_right"))]
 macro_rules! config_matrix_pins_nrf {
     (peripherals: $p:ident, input: [$($in_pin:ident), *], output: [$($out_pin:ident), +]) => {
         {
@@ -17,12 +18,7 @@ macro_rules! hrm {
         KeyAction::TapHold(
             Action::Key(KeyCode::$k),
             Action::Modifier(ModifierCombination::$m),
-            MorseProfile::new(
-                Some(true),
-                Some(MorseMode::HoldOnOtherPress),
-                Some(175),
-                None,
-            ),
+            MorseProfile::new(Some(true), Some(MorseMode::PermissiveHold), Some(175), None),
         )
     };
 }

@@ -1,16 +1,21 @@
+#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
 use rmk::types::{
     action::{Action, KeyAction, MorseMode, MorseProfile},
     keycode::KeyCode,
     modifier::ModifierCombination,
 };
+#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
 use rmk::{a, k, mo, to, wm};
 
+#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
 use crate::{hrm, kol};
 
 pub(crate) const COL: usize = 12;
 pub(crate) const ROW: usize = 4;
+#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
 pub(crate) const NUM_LAYER: usize = 5;
 
+#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
 #[rustfmt::skip]
 pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
     [
@@ -22,7 +27,7 @@ pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
         ],
         [ // num
             [a!(Transparent), a!(Transparent),a!(Transparent), k!(LeftBracket), k!(RightBracket), k!(Grave), wm!(Grave, ModifierCombination::LSHIFT), wm!(LeftBracket, ModifierCombination::LSHIFT), wm!(RightBracket, ModifierCombination::LSHIFT), a!(Transparent), a!(Transparent), a!(Transparent)],  
-            [k!(CapsLock),  k!(Kp1), k!(Kp2), k!(Kp3), k!(Kp4), k!(Kp5), k!(Kp6), k!(Kp7), k!(Kp8), k!(Kp9), k!(Kp0), a!(Transparent)], 
+            [k!(CapsLock),  k!(Kc1), k!(Kc2), k!(Kc3), k!(Kc4), k!(Kc5), k!(Kc6), k!(Kc7), k!(Kc8), k!(Kc9), k!(Kc0), a!(Transparent)], 
             [a!(Transparent), a!(Transparent), a!(Transparent), k!(Enter), k!(Minus), wm!(Minus, ModifierCombination::LSHIFT), k!(KpEqual), k!(KpPlus), a!(Transparent), a!(Transparent), a!(Transparent), a!(Transparent)], 
             [k!(No),  k!(No), k!(No), a!(Transparent), a!(Transparent), a!(Transparent), a!(Transparent), a!(Transparent), a!(Transparent), k!(No), k!(No), k!(No)], 
         ], 

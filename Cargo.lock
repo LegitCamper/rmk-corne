@@ -533,21 +533,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "defmt-embassy-usbserial"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fc694abdabcdda69dd086a1affe85ec6c333338c55f0e28bdefdcedf9393bd1"
-dependencies = [
- "critical-section",
- "defmt 1.0.1",
- "embassy-futures",
- "embassy-time",
- "embassy-usb",
- "portable-atomic",
- "static_cell",
-]
-
-[[package]]
 name = "defmt-macros"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1868,13 +1853,11 @@ dependencies = [
  "cortex-m",
  "cortex-m-rt",
  "defmt 1.0.1",
- "defmt-embassy-usbserial",
  "defmt-rtt",
  "embassy-executor",
  "embassy-nrf",
  "embassy-time",
  "embassy-usb",
- "embassy-usb-logger",
  "json",
  "nrf-mpsl",
  "nrf-sdc",

@@ -7,9 +7,6 @@ use rmk::types::{
 #[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
 use rmk::{a, k, mo, to, wm};
 
-#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
-use crate::{hrm, kol};
-
 pub(crate) const COL: usize = 12;
 pub(crate) const ROW: usize = 4;
 #[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]

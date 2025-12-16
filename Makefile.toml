@@ -1,9 +1,9 @@
 [env]
 RMK_RESET_ARG = { script = [
-  "if [ -n \"$RMK_RESET\" ]; then echo \"--features=reset\"; else echo \"--features=no_reset\"; fi"
+  "if [ -n \"$RMK_RESET\" ]; then echo \"reset\"; else echo \"no_reset\"; fi",
 ] }
 RMK_LOG_ARG = { script = [
-  "if [ -n \"$RMK_LOG\" ]; then echo \"--features=usb_logging\"; else echo \"--features=no_log\"; fi"
+  "if [ -n \"$RMK_LOG\" ]; then echo \"usb_logging\"; else echo \"no_log\"; fi",
 ] }
 
 [tasks.install-llvm-tools]
@@ -25,8 +25,8 @@ args = [
   "--release",
   "--bin",
   "central",
-  "${RMK_RESET_ARG}",
-  "${RMK_LOG_ARG}",
+  "--features",
+  "${RMK_RESET_ARG},${RMK_LOG_ARG}",
   "--",
   "-O",
   "ihex",
@@ -46,8 +46,7 @@ args = [
   "--bin",
   "peripheral_left",
   "--features",
-  "peripheral_left",
-  "${RMK_RESET_ARG}",
+  "peripheral_left,${RMK_RESET_ARG}",
   "--",
   "-O",
   "ihex",
@@ -67,8 +66,7 @@ args = [
   "--bin",
   "peripheral_right",
   "--features",
-  "peripheral_right",
-  "${RMK_RESET_ARG}",
+  "peripheral_right,${RMK_RESET_ARG}",
   "--",
   "-O",
   "ihex",

@@ -50,7 +50,7 @@ rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "158b9e84f9ca092698ae7569
   "async_matrix",
   "adafruit_bl",
   "vial",
-  "vial_lock"
+  "vial_lock",
 ], default-features = false }
 nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", features = [
   "defmt",
@@ -87,6 +87,10 @@ embassy-executor = { version = "0.9", features = [
   "executor-thread",
 ] }
 embassy-usb = "0.5.1"
+embassy-sync = "0.7.2"
+embassy-embedded-hal = "0.5.0"
+embassy-futures = "0.1.2"
+
 defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
@@ -95,6 +99,13 @@ static_cell = "2"
 rand = { version = "0.8.4", default-features = false }
 rand_core = { version = "0.6" }
 rand_chacha = { version = "0.3", default-features = false }
+
+mousefood = { git = "https://github.com/j-g00da/mousefood", rev = "693d82ae9482c32be6363e72474faeb7d962cb1b" }
+ratatui = { version = "0.30.0", default-features = false }
+embedded-graphics = "0.8.1"
+st7789v2_driver = { git = "https://github.com/MrBran4/st7789v2_driver", rev = "c512cd715fce32b06813af82b994c8df3f8bb1e9" }
+spin = "0.10.0"
+talc = { version = "4.4.3", default-features = false, features = ["lock_api"] }
 
 [build-dependencies]
 xz2 = "0.1.7"

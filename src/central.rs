@@ -5,17 +5,22 @@
 mod macros;
 
 mod keymap;
+use embassy_futures::join::join3;
 use keymap::{COL, NUM_LAYER, ROW};
+use talc::{ClaimOnOom, Span, Talc, Talck};
+
+mod prospector;
+use crate::prospector::ProspectorPins;
 
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
 use embassy_nrf::gpio::Output;
 use embassy_nrf::mode::Async;
-use embassy_nrf::peripherals::{RNG, USBD};
+use embassy_nrf::peripherals::{RNG, SPI3, USBD};
 use embassy_nrf::saadc::{self};
 use embassy_nrf::usb::Driver;
 use embassy_nrf::usb::vbus_detect::HardwareVbusDetect;
-use embassy_nrf::{bind_interrupts, rng, usb};
+use embassy_nrf::{bind_interrupts, rng, spim, usb};
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
@@ -36,6 +41,13 @@ use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
+static mut ARENA: [u8; 10000] = [0; 10000];
+
+#[global_allocator]
+static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> =
+    Talc::new(unsafe { ClaimOnOom::new(Span::from_array(core::ptr::addr_of!(ARENA).cast_mut())) })
+        .lock();
+
 bind_interrupts!(struct Irqs {
     USBD => usb::InterruptHandler<USBD>;
     SAADC => saadc::InterruptHandler;
@@ -45,6 +57,8 @@ bind_interrupts!(struct Irqs {
     RADIO => nrf_sdc::mpsl::HighPrioInterruptHandler;
     TIMER0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
     RTC0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
+    SPIM3 => spim::InterruptHandler<SPI3>;
+
 });
 
 #[embassy_executor::task]
@@ -196,8 +210,20 @@ async fn main(spawner: Spawner) {
         rmk::types::led_indicator::LedIndicatorType::CapsLock,
     );
 
+    // create prospector display
+    let prospector_pins = ProspectorPins {
+        spi: p.SPI3,
+        dc: p.P1_12,
+        sck: p.P1_13,
+        cs: p.P1_14,
+        mosi: p.P1_15,
+        bl: p.P1_11,
+        rst: p.P0_29,
+    };
+    let display = prospector::create_display(prospector_pins);
+
     // Start
-    join(
+    join3(
         join(keyboard.run(), capslock_led.event_loop()),
         join4(
             scan_peripherals(&stack, &peripheral_addrs),
@@ -205,6 +231,7 @@ async fn main(spawner: Spawner) {
             run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
             run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
         ),
+        prospector::run(display),
     )
     .await;
 }

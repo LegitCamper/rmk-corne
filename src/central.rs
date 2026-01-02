@@ -220,7 +220,7 @@ async fn main(spawner: Spawner) {
         bl: p.P1_11,
         rst: p.P0_29,
     };
-    let display = prospector::create_display(prospector_pins).await;
+    let (display, _bl_pin) = prospector::create_display(prospector_pins).await;
 
     // Start
     join3(

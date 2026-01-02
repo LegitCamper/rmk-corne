@@ -11,9 +11,11 @@ use embassy_time::Timer;
 use embedded_graphics::{
     Drawable,
     draw_target::DrawTarget,
+    mono_font::{MonoTextStyle, ascii::FONT_6X10},
     pixelcolor::BinaryColor,
     prelude::{Point, Primitive, RgbColor, Size},
-    primitives::{PrimitiveStyle, Rectangle, Triangle},
+    primitives::{PrimitiveStyle, Rectangle, StyledDrawable, Triangle},
+    text::{Text, TextStyleBuilder},
 };
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig, prelude::Rgb565};
 use ratatui::{
@@ -21,7 +23,7 @@ use ratatui::{
     style::{Style, Stylize},
     widgets::{Block, Paragraph, Wrap},
 };
-use st7789v2_driver::{ST7789V2, VERTICAL};
+use st7789v2_driver::{HORIZONTAL, ST7789V2};
 
 const WIDTH: u32 = 280;
 const HEIGHT: u32 = 240;
@@ -37,7 +39,7 @@ fn draw(frame: &mut Frame) {
 
 type DISPLAY = ST7789V2<Spim<'static>, Output<'static>, Output<'static>, Output<'static>>;
 
-pub async fn create_display(pins: ProspectorPins) -> DISPLAY {
+pub async fn create_display(pins: ProspectorPins) -> (DISPLAY, Output<'static>) {
     let mut config = spim::Config::default();
     config.frequency = Frequency::M1;
     let spim = Spim::new_txonly(pins.spi, Irqs, pins.sck, pins.mosi, config);
@@ -47,15 +49,15 @@ pub async fn create_display(pins: ProspectorPins) -> DISPLAY {
     let cs = Output::new(pins.cs, Level::High, OutputDrive::Standard);
     let rst = Output::new(pins.rst, Level::Low, OutputDrive::Standard);
 
-    let mut display = ST7789V2::new(spim, dc, cs, rst, true, VERTICAL, WIDTH, HEIGHT);
+    let mut display = ST7789V2::new(spim, dc, cs, rst, false, HORIZONTAL, WIDTH, HEIGHT);
 
     display.init(&mut embassy_time::Delay).unwrap();
 
-    display.clear(Rgb565::RED).unwrap();
+    display.clear(Rgb565::BLACK).unwrap();
     bl.set_high();
     Timer::after_millis(1000).await;
 
-    display
+    (display, bl)
 }
 
 pub async fn run(mut display: DISPLAY) {
@@ -63,6 +65,16 @@ pub async fn run(mut display: DISPLAY) {
     // let backend = EmbeddedBackend::new(&mut display, EmbeddedBackendConfig::default());
     // let mut terminal = Terminal::new(backend).unwrap();
     //
+
+    Rectangle::new(Point::new(0, 0), Size::new(120, 120))
+        .draw_styled(&PrimitiveStyle::with_fill(Rgb565::RED), &mut display)
+        .unwrap();
+
+    let character_style = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
+
+    Text::new("What da fox say", Point::new(25, 120), character_style)
+        .draw(&mut display)
+        .unwrap();
 
     // Draw a triangle.
     // Rectangle::new(Point::new(0, 0), Size::new(200, 200))

@@ -12,7 +12,7 @@ use keymap::{COL, NUM_LAYER, ROW};
 use talc::{ClaimOnOom, Span, Talc, Talck};
 
 mod prospector;
-use crate::prospector::ProspectorPins;
+use crate::prospector::display::{ProspectorPins, create_display};
 
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
@@ -43,7 +43,7 @@ use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
-static mut ARENA: [u8; 75_000] = [0; 75_000];
+static mut ARENA: [u8; 75 * 1024] = [0; 75 * 1024];
 
 #[global_allocator]
 static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> =
@@ -60,7 +60,6 @@ bind_interrupts!(struct Irqs {
     TIMER0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
     RTC0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
     SPIM3 => spim::InterruptHandler<SPI3>;
-
 });
 
 #[embassy_executor::task]
@@ -213,7 +212,7 @@ async fn main(spawner: Spawner) {
     );
 
     // create prospector display
-    let prospector_pins = ProspectorPins {
+    let (display, _backlight_pin) = create_display(ProspectorPins {
         spi: p.SPI3,
         dc: p.P1_12,
         sck: p.P1_13,
@@ -221,8 +220,8 @@ async fn main(spawner: Spawner) {
         mosi: p.P1_15,
         bl: p.P1_11,
         rst: p.P0_29,
-    };
-    let (display, _backlight_pin) = prospector::create_display(prospector_pins).await;
+    })
+    .await;
 
     // Start
     join3(

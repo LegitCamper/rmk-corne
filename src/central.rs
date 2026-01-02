@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 #[macro_use]
 mod macros;
 
@@ -41,7 +43,7 @@ use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
-static mut ARENA: [u8; 150_000] = [0; 150_000];
+static mut ARENA: [u8; 75_000] = [0; 75_000];
 
 #[global_allocator]
 static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> =
@@ -220,7 +222,7 @@ async fn main(spawner: Spawner) {
         bl: p.P1_11,
         rst: p.P0_29,
     };
-    let (display, _bl_pin) = prospector::create_display(prospector_pins).await;
+    let (display, _backlight_pin) = prospector::create_display(prospector_pins).await;
 
     // Start
     join3(

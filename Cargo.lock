@@ -4675,6 +4675,7 @@ dependencies = [
  "st7789v2_driver",
  "static_cell",
  "talc",
+ "trouble-host",
  "xz2",
 ]
 

@@ -81,15 +81,17 @@ embassy-nrf = { version = "0.8", features = [
   "nfc-pins-as-gpio",
   "time",
 ] }
-embassy-executor = { version = "0.9", features = [
+embassy-executor = { version = "0.9.0", features = [
   "defmt",
   "arch-cortex-m",
   "executor-thread",
+  "executor-interrupt",
 ] }
 embassy-usb = "0.5.1"
 embassy-sync = "0.7.2"
 embassy-embedded-hal = "0.5.0"
 embassy-futures = "0.1.2"
+trouble-host = "0.5.1"
 
 embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
@@ -105,7 +107,7 @@ rand_chacha = { version = "0.3", default-features = false }
 
 embedded-graphics = "0.8.1"
 st7789v2_driver = { git = "https://github.com/LegitCamper/st7789v2_driver", rev = "c84224af3f4285d1ab05ec41e8725ce104515fc5" }
-slint = { version = "1.14", default-features = false, features = [
+slint = { version = "1.13.1", default-features = false, features = [
   "compat-1-2",
   "unsafe-single-threaded",
   "libm",
@@ -119,4 +121,4 @@ talc = { version = "4.4.3", default-features = false, features = ["lock_api"] }
 xz2 = "0.1.7"
 json = "0.12"
 const-gen = "1.6"
-slint-build = "1.14"
+slint-build = "1.13.1"

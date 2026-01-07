@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(static_mut_refs)]
 
 extern crate alloc;
 
@@ -7,7 +8,6 @@ extern crate alloc;
 mod macros;
 
 mod keymap;
-use embassy_futures::join::join3;
 use keymap::{COL, NUM_LAYER, ROW};
 use talc::{ClaimOnOom, Span, Talc, Talck};
 
@@ -32,7 +32,7 @@ use rmk::ble::build_ble_stack;
 use rmk::config::{BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig};
 use rmk::controller::EventController as _;
 use rmk::controller::led_indicator::KeyboardIndicatorController;
-use rmk::futures::future::{join, join4};
+use rmk::futures::future::{join, join3, join4};
 use rmk::input_device::Runnable;
 use rmk::keyboard::Keyboard;
 use rmk::split::ble::central::{read_peripheral_addresses, scan_peripherals};
@@ -43,7 +43,7 @@ use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
-static mut ARENA: [u8; 75 * 1024] = [0; 75 * 1024];
+static mut ARENA: [u8; 25 * 1024] = [0; 25 * 1024];
 
 #[global_allocator]
 static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> =
@@ -200,19 +200,8 @@ async fn main(spawner: Spawner) {
     let peripheral_addrs =
         read_peripheral_addresses::<2, _, ROW, COL, NUM_LAYER, 0>(&mut storage).await;
 
-    // Initialize the controllers
-    let mut capslock_led = KeyboardIndicatorController::new(
-        Output::new(
-            p.P0_00,
-            embassy_nrf::gpio::Level::Low,
-            embassy_nrf::gpio::OutputDrive::Standard,
-        ),
-        false,
-        rmk::types::led_indicator::LedIndicatorType::CapsLock,
-    );
-
     // create prospector display
-    let (display, _backlight_pin) = create_display(ProspectorPins {
+    let (display, _backlight_pin, framebuffer) = create_display(ProspectorPins {
         spi: p.SPI3,
         dc: p.P1_12,
         sck: p.P1_13,
@@ -224,15 +213,15 @@ async fn main(spawner: Spawner) {
     .await;
 
     // Start
-    join3(
-        join(keyboard.run(), capslock_led.event_loop()),
+    join(
+        // keyboard.run(),
         join4(
             scan_peripherals(&stack, &peripheral_addrs),
             run_peripheral_manager::<ROW, COL, 0, 0, _>(0, &peripheral_addrs, &stack),
             run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
             run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
         ),
-        prospector::run(display),
+        prospector::run(display, framebuffer),
     )
     .await;
 }

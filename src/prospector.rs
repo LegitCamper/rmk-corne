@@ -1,7 +1,16 @@
+use alloc::boxed::Box;
 use core::cmp;
 use defmt::info;
 use embassy_futures::yield_now;
 use embassy_time::{Instant, Timer};
+use embedded_graphics::{
+    Drawable,
+    mono_font::{MonoTextStyle, ascii::FONT_6X10},
+    pixelcolor::Rgb565,
+    prelude::{Dimensions, Point, Primitive, RgbColor, Size},
+    primitives::{PrimitiveStyle, Rectangle},
+    text::{Alignment, Text},
+};
 use slint::{
     PhysicalSize, PlatformError,
     platform::{
@@ -10,6 +19,7 @@ use slint::{
         update_timers_and_animations,
     },
 };
+use st7789v2_driver::FrameBuffer;
 
 slint::include_modules!();
 
@@ -19,19 +29,18 @@ const HEIGHT: usize = 240;
 pub fn create_slint_app() -> MainWindow {
     let ui = MainWindow::new().expect("Failed to load UI");
 
+    let ui_handle = ui.as_weak();
+
     ui
 }
 
-pub async fn run(mut display: display::DISPLAY) {
+pub async fn run(mut display: display::DISPLAY, mut fb: FrameBuffer<'static>) {
     info!("Starting display");
 
     let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
     window.set_size(PhysicalSize::new(WIDTH as u32, HEIGHT as u32));
-    set_platform(alloc::boxed::Box::new(MyPlatform {
-        window: window.clone(),
-        instant: Instant::now(),
-    }))
-    .unwrap();
+
+    set_platform(Box::new(MyPlatform(window.clone(), Instant::now()))).unwrap();
 
     let _ui = create_slint_app();
 
@@ -39,40 +48,47 @@ pub async fn run(mut display: display::DISPLAY) {
     loop {
         update_timers_and_animations();
 
-        // window.draw_if_needed(|renderer| {
-        //     renderer.render_by_line(display::DisplayWrapper {
-        //         display: &mut display,
-        //         line_buffer: &mut line,
-        //     });
-        // });
+        let mut did_draw = false;
+
+        // draw ui to framebuffer
+        window.draw_if_needed(|renderer| {
+            renderer.render_by_line(display::DisplayWrapper {
+                framebuffer: &mut fb,
+                line_buffer: &mut line,
+            });
+            did_draw = true;
+        });
+
+        if did_draw {
+            info!("flushing fb");
+            display.draw_image(fb.get_buffer()).unwrap();
+        }
 
         if !window.has_active_animations() {
             if let Some(duration) = duration_until_next_timer_update() {
                 let ms = cmp::min(duration.as_millis(), 1000) as u64; // max 1s
                 Timer::after_millis(ms).await;
-                continue;
+            } else {
+                yield_now().await;
             }
-            yield_now().await;
+            continue;
         }
 
         yield_now().await;
     }
 }
 
-struct MyPlatform {
-    window: alloc::rc::Rc<MinimalSoftwareWindow>,
-    instant: Instant,
-}
+struct MyPlatform(alloc::rc::Rc<MinimalSoftwareWindow>, Instant);
 
 impl Platform for MyPlatform {
     fn create_window_adapter(&self) -> Result<alloc::rc::Rc<dyn WindowAdapter>, PlatformError> {
-        Ok(self.window.clone())
+        Ok(self.0.clone())
     }
 
     fn duration_since_start(&self) -> core::time::Duration {
         core::time::Duration::from_micros(
             Instant::now()
-                .checked_duration_since(self.instant)
+                .checked_duration_since(self.1)
                 .unwrap()
                 .as_micros(),
         )
@@ -92,18 +108,20 @@ pub mod display {
     use embassy_time::{Delay, Timer};
     use embedded_graphics::{
         draw_target::DrawTarget,
-        pixelcolor::{Rgb565, raw::RawU16},
-        prelude::{Point, RgbColor, Size},
+        pixelcolor::raw::RawU16,
+        prelude::{Point, Size},
         primitives::Rectangle,
     };
-    use st7789v2_driver::{HORIZONTAL, ST7789V2};
+    use embedded_graphics::{pixelcolor::Rgb565, prelude::RgbColor};
+    use st7789v2_driver::{FrameBuffer, HORIZONTAL, ST7789V2};
 
     pub type DISPLAY = ST7789V2<Spim<'static>, Output<'static>, Output<'static>, Output<'static>>;
 
-    pub async fn create_display(pins: ProspectorPins) -> (DISPLAY, Output<'static>) {
-        let mut config = spim::Config::default();
-        config.frequency = Frequency::M32;
-        let spim = Spim::new_txonly(pins.spi, Irqs, pins.sck, pins.mosi, config);
+    pub async fn create_display(
+        pins: ProspectorPins,
+    ) -> (DISPLAY, Output<'static>, FrameBuffer<'static>) {
+        let config = spim::Config::default();
+        let spim = Spim::new_txonly(pins.spi, Irqs, pins.sck, pins.mosi, config.clone());
 
         let mut bl = Output::new(pins.bl, Level::Low, OutputDrive::Standard);
         let dc = Output::new(pins.dc, Level::Low, OutputDrive::Standard);
@@ -115,7 +133,7 @@ pub mod display {
             dc,
             cs,
             rst,
-            false,
+            true,
             HORIZONTAL,
             WIDTH as u32,
             HEIGHT as u32,
@@ -127,7 +145,11 @@ pub mod display {
         bl.set_high();
         Timer::after_millis(1000).await;
 
-        (display, bl)
+        static mut FRAME_BUFFER: [u8; WIDTH * HEIGHT * 2] = [0; WIDTH * HEIGHT * 2];
+        let framebuffer =
+            FrameBuffer::new(unsafe { &mut FRAME_BUFFER }, WIDTH as u32, HEIGHT as u32);
+
+        (display, bl, framebuffer)
     }
 
     pub struct ProspectorPins {
@@ -140,14 +162,12 @@ pub mod display {
         pub rst: Peri<'static, P0_29>,
     }
 
-    pub struct DisplayWrapper<'a, T> {
-        pub display: &'a mut T,
+    pub struct DisplayWrapper<'a> {
+        pub framebuffer: &'a mut FrameBuffer<'static>,
         pub line_buffer: &'a mut [slint::platform::software_renderer::Rgb565Pixel],
     }
 
-    impl<T: DrawTarget<Color = Rgb565>> slint::platform::software_renderer::LineBufferProvider
-        for DisplayWrapper<'_, T>
-    {
+    impl slint::platform::software_renderer::LineBufferProvider for DisplayWrapper<'_> {
         type TargetPixel = slint::platform::software_renderer::Rgb565Pixel;
 
         fn process_line(
@@ -156,18 +176,20 @@ pub mod display {
             range: core::ops::Range<usize>,
             render_fn: impl FnOnce(&mut [Self::TargetPixel]),
         ) {
-            // render Slint pixels into line buffer slice
-            let slice = &mut self.line_buffer[range.start..range.end];
-            render_fn(slice);
+            // Render into the line
+            render_fn(&mut self.line_buffer[range.clone()]);
 
-            // send to ST7789
-            let raw_pixels = slice.iter().map(|p| RawU16::new(p.0.swap_bytes()).into());
-            let rect = Rectangle::new(
-                Point::new(range.start as i32, line as i32),
-                Size::new(slice.len() as u32, 1),
-            );
-            self.display
-                .fill_contiguous(&rect, raw_pixels)
+            // Send the line to the screen using DrawTarget::fill_contiguous
+            self.framebuffer
+                .fill_contiguous(
+                    &Rectangle::new(
+                        Point::new(range.start as _, line as _),
+                        Size::new(range.len() as _, 1),
+                    ),
+                    self.line_buffer[range.clone()]
+                        .iter()
+                        .map(|p| RawU16::new(p.0).into()),
+                )
                 .map_err(drop)
                 .unwrap();
         }

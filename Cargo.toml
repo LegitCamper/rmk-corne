@@ -91,6 +91,9 @@ embassy-sync = "0.7.2"
 embassy-embedded-hal = "0.5.0"
 embassy-futures = "0.1.2"
 
+embedded-hal = "1.0.0"
+embedded-hal-async = "1.0.0"
+
 defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
@@ -101,7 +104,7 @@ rand_core = { version = "0.6" }
 rand_chacha = { version = "0.3", default-features = false }
 
 embedded-graphics = "0.8.1"
-st7789v2_driver = { git = "https://github.com/MrBran4/st7789v2_driver", rev = "c512cd715fce32b06813af82b994c8df3f8bb1e9" }
+st7789v2_driver = { git = "https://github.com/LegitCamper/st7789v2_driver", rev = "c84224af3f4285d1ab05ec41e8725ce104515fc5" }
 slint = { version = "1.14", default-features = false, features = [
   "compat-1-2",
   "unsafe-single-threaded",

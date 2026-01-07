@@ -3,14 +3,6 @@ use core::cmp;
 use defmt::info;
 use embassy_futures::yield_now;
 use embassy_time::{Instant, Timer};
-use embedded_graphics::{
-    Drawable,
-    mono_font::{MonoTextStyle, ascii::FONT_6X10},
-    pixelcolor::Rgb565,
-    prelude::{Dimensions, Point, Primitive, RgbColor, Size},
-    primitives::{PrimitiveStyle, Rectangle},
-    text::{Alignment, Text},
-};
 use slint::{
     PhysicalSize, PlatformError,
     platform::{
@@ -60,7 +52,7 @@ pub async fn run(mut display: display::DISPLAY, mut fb: FrameBuffer<'static>) {
         });
 
         if did_draw {
-            info!("flushing fb");
+            Timer::after_millis(10).await;
             display.draw_image(fb.get_buffer()).unwrap();
         }
 
@@ -68,10 +60,8 @@ pub async fn run(mut display: display::DISPLAY, mut fb: FrameBuffer<'static>) {
             if let Some(duration) = duration_until_next_timer_update() {
                 let ms = cmp::min(duration.as_millis(), 1000) as u64; // max 1s
                 Timer::after_millis(ms).await;
-            } else {
-                yield_now().await;
+                continue;
             }
-            continue;
         }
 
         yield_now().await;

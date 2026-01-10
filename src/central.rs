@@ -43,7 +43,7 @@ use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
 
-static mut ARENA: [u8; 25 * 1024] = [0; 25 * 1024];
+static mut ARENA: [u8; 100 * 1024] = [0; 100 * 1024];
 
 #[global_allocator]
 static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> =
@@ -201,7 +201,7 @@ async fn main(spawner: Spawner) {
         read_peripheral_addresses::<2, _, ROW, COL, NUM_LAYER, 0>(&mut storage).await;
 
     // create prospector display
-    let (display, _backlight_pin, framebuffer) = create_display(ProspectorPins {
+    let (display, _backlight_pin) = create_display(ProspectorPins {
         spi: p.SPI3,
         dc: p.P1_12,
         sck: p.P1_13,
@@ -213,15 +213,15 @@ async fn main(spawner: Spawner) {
     .await;
 
     // Start
-    join(
-        // keyboard.run(),
+    join3(
+        keyboard.run(),
         join4(
             scan_peripherals(&stack, &peripheral_addrs),
             run_peripheral_manager::<ROW, COL, 0, 0, _>(0, &peripheral_addrs, &stack),
             run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
             run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
         ),
-        prospector::run(display, framebuffer),
+        prospector::run(display),
     )
     .await;
 }

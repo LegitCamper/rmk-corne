@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 #[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
 fn build_slint() {
+    println!("cargo:rustc-link-arg=--defsym=__stack_size=0x8000");
     slint_build::compile_with_config(
         "ui/main.slint",
         slint_build::CompilerConfiguration::new()

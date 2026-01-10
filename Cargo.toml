@@ -105,12 +105,14 @@ rand_chacha = { version = "0.3", default-features = false }
 
 embedded-graphics = "0.8.1"
 st7789v2_driver = { git = "https://github.com/LegitCamper/st7789v2_driver", rev = "c84224af3f4285d1ab05ec41e8725ce104515fc5" }
-slint = { version = "1.14", default-features = false, features = [
-  "compat-1-2",
-  "unsafe-single-threaded",
-  "libm",
-  "renderer-software",
-] }
+# slint = { version = "1.14", default-features = false, features = [
+#   "compat-1-2",
+#   "unsafe-single-threaded",
+#   "libm",
+#   "renderer-software",
+# ] }
+mousefood = { git = "https://github.com/j-g00da/mousefood", rev = "693d82ae9482c32be6363e72474faeb7d962cb1b", default-features = false }
+ratatui = { version = "0.30.0", default-features = false }
 
 spin = "0.10.0"
 talc = { version = "4.4.3", default-features = false, features = ["lock_api"] }

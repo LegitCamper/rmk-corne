@@ -1,26 +1,29 @@
-use alloc::boxed::Box;
-use core::cmp;
+use core::fmt::Write;
 use defmt::info;
-use embassy_futures::yield_now;
-use embassy_time::{Instant, Timer};
+use embassy_futures::{join::join, yield_now};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch::Watch};
+use embassy_time::Timer;
 use mousefood::prelude::*;
 use ratatui::{
     Frame, Terminal,
+    layout::Alignment,
     style::{Style, Stylize},
     widgets::{Block, Paragraph, Wrap},
 };
+use rmk::{channel::CONTROLLER_CHANNEL, heapless};
 
 const WIDTH: usize = 280;
 const HEIGHT: usize = 240;
 
-fn draw(frame: &mut Frame) {
-    let text = "Ratatui on embedded devices!";
-    let paragraph = Paragraph::new(text.dark_gray()).wrap(Wrap { trim: true });
-    let bordered_block = Block::bordered()
-        .border_style(Style::new().yellow())
-        .title("Mousefood");
-    frame.render_widget(paragraph.block(bordered_block), frame.area());
+#[derive(Default, Clone, Copy)]
+struct keyboardState {
+    battery_l: u16,
+    battery_r: u16,
+    layer: u8,
+    wpm: u16,
 }
+
+static STATE_WATCH: Watch<CriticalSectionRawMutex, keyboardState, 2> = Watch::new();
 
 pub async fn run(mut display: display::DISPLAY) {
     info!("Starting display");
@@ -28,11 +31,65 @@ pub async fn run(mut display: display::DISPLAY) {
     let backend = EmbeddedBackend::new(&mut display, EmbeddedBackendConfig::default());
     let mut terminal = Terminal::new(backend).unwrap();
 
-    loop {
-        terminal.draw(draw).unwrap();
+    let mut start = true;
 
-        Timer::after_millis(33).await;
-    }
+    join(
+        async {
+            let mut keyboard_state = STATE_WATCH.receiver().unwrap();
+            loop {
+                let state = keyboard_state.changed().await;
+
+                terminal
+                    .draw(|frame| {
+                        let mut s = heapless::String::<64>::new();
+                        write!(s, "Layer: {} | WPM: {}", state.layer, state.wpm).unwrap();
+
+                        frame.render_widget(
+                            Paragraph::new(s.as_str()).alignment(Alignment::Center),
+                            frame.area(),
+                        );
+                    })
+                    .unwrap();
+                Timer::after_millis(33).await;
+            }
+        },
+        async {
+            let keyboard_state = STATE_WATCH.sender();
+            let mut rmk_events = CONTROLLER_CHANNEL.subscriber().unwrap();
+            let mut changed = false;
+
+            if start {
+                start = false;
+                changed = true;
+            }
+
+            loop {
+                let mut new_state = keyboardState::default();
+
+                let event = rmk_events.next_message_pure().await;
+                match event {
+                    // rmk::event::ControllerEvent::Battery(_) => todo!(),
+                    rmk::event::ControllerEvent::Layer(layer) => {
+                        new_state.layer = layer;
+                        changed = true;
+                    }
+                    // rmk::event::ControllerEvent::Modifier(modifier_combination) => todo!(),
+                    rmk::event::ControllerEvent::Wpm(wpm) => {
+                        new_state.wpm = wpm;
+                        changed = true;
+                    }
+                    _ => {}
+                }
+
+                if changed {
+                    keyboard_state.send(new_state);
+
+                    Timer::after_millis(100).await;
+                }
+            }
+        },
+    )
+    .await;
 }
 
 pub mod display {

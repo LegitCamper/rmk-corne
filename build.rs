@@ -15,21 +15,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
-fn build_slint() {
-    println!("cargo:rustc-link-arg=--defsym=__stack_size=0x8000");
-    slint_build::compile_with_config(
-        "ui/main.slint",
-        slint_build::CompilerConfiguration::new()
-            .embed_resources(slint_build::EmbedResourcesKind::EmbedForSoftwareRenderer),
-    )
-    .unwrap();
-}
-
 fn main() {
-    #[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
-    build_slint();
-
     // Put `memory.x` in our output directory and ensure it's
     // on the linker search path.
     let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());

@@ -16,7 +16,6 @@ use crate::prospector::display::{ProspectorPins, create_display};
 
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
-use embassy_nrf::gpio::Output;
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, SPI3, USBD};
 use embassy_nrf::saadc::{self};
@@ -30,9 +29,7 @@ use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::build_ble_stack;
 use rmk::config::{BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig};
-use rmk::controller::EventController as _;
-use rmk::controller::led_indicator::KeyboardIndicatorController;
-use rmk::futures::future::{join, join3, join4};
+use rmk::futures::future::{join3, join4};
 use rmk::input_device::Runnable;
 use rmk::keyboard::Keyboard;
 use rmk::split::ble::central::{read_peripheral_addresses, scan_peripherals};

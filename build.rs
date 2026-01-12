@@ -15,7 +15,25 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
+use eg_font_converter::FontConverter;
+
+fn convert_font() {
+    let out_dir = std::env::var_os("OUT_DIR").unwrap();
+
+    let font_12x12 =
+        FontConverter::with_file("assets/fonts/JetBrainsMono-Regular-12.bdf", "FONT_12x12")
+            .glyphs("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ %⌘⇧⌃⌥")
+            .missing_glyph_substitute(' ')
+            .convert_mono_font()
+            .unwrap();
+
+    font_12x12.save(&out_dir).unwrap();
+    println!("cargo:rerun-if-changed=assets/fonts/JetBrainsMono-Regular-12.bdf");
+}
+
 fn main() {
+    convert_font();
+
     // Put `memory.x` in our output directory and ensure it's
     // on the linker search path.
     let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());

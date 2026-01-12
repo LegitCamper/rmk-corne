@@ -14,6 +14,8 @@ use ratatui::{
 use rmk::event::ControllerEvent;
 use rmk::{channel::CONTROLLER_CHANNEL, types::modifier::ModifierCombination};
 
+include!(concat!(env!("OUT_DIR"), "/font_12x12.rs"));
+
 #[derive(Default, Clone, Copy)]
 struct KeyboardState {
     battery_l: Option<u8>,
@@ -110,10 +112,10 @@ fn draw_modifiers(frame: &mut Frame, area: Rect, mods: ModifierCombination) {
         .split(area);
 
     let items = [
-        ("W", mods.win),
-        ("S", mods.shift),
-        ("C", mods.ctrl),
-        ("A", mods.alt),
+        ("⌘", mods.win),
+        ("⇧", mods.shift),
+        ("⌃", mods.ctrl),
+        ("⌥", mods.alt),
     ];
 
     for ((label, active), chunk) in items.into_iter().zip(chunks.iter()) {
@@ -138,7 +140,9 @@ pub async fn run(display: display::DISPLAY) {
 
     let mut scaled_display = display::ScaledDisplay::new(display);
 
-    let backend = EmbeddedBackend::new(&mut scaled_display, EmbeddedBackendConfig::default());
+    let mut config = EmbeddedBackendConfig::default();
+    config.font_regular = FONT_12x12;
+    let backend = EmbeddedBackend::new(&mut scaled_display, config);
     let mut terminal = Terminal::new(backend).unwrap();
 
     let mut rmk_events = CONTROLLER_CHANNEL.subscriber().unwrap();

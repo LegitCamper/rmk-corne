@@ -110,3 +110,6 @@ ratatui = { version = "0.30.0", default-features = false }
 
 spin = "0.10.0"
 talc = { version = "4.4.3", default-features = false, features = ["lock_api"] }
+
+[build-dependencies]
+eg-font-converter = { git = "https://github.com/embedded-graphics/bdf", rev = "667ad278ad267f80cf493defacedce75c11338b6" }

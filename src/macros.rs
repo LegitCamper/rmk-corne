@@ -16,7 +16,7 @@ macro_rules! config_matrix_pins_nrf {
 macro_rules! hrm {
     ($k: ident, $m: ident) => {
         KeyAction::TapHold(
-            Action::Key(KeyCode::$k),
+            Action::Key(KeyCode::Hid(HidKeyCode::$k)),
             Action::Modifier(ModifierCombination::$m),
             MorseProfile::new(Some(true), Some(MorseMode::PermissiveHold), Some(175), None),
         )
@@ -26,9 +26,9 @@ macro_rules! hrm {
 #[macro_export]
 // key or layer
 macro_rules! kol {
-    ($x: expr, $k: ident) => {
+    ($k: ident, $x: expr) => {
         KeyAction::TapHold(
-            Action::Key(KeyCode::$k),
+            Action::Key(KeyCode::Hid(HidKeyCode::$k)),
             Action::LayerOn($x),
             MorseProfile::new(None, None, Some(175), None),
         )

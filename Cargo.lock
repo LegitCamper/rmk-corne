@@ -2012,8 +2012,8 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "rmk"
-version = "0.8.1"
-source = "git+https://github.com/HaoboGu/rmk/?rev=158b9e84f9ca092698ae75699edf90582efdba7d#158b9e84f9ca092698ae75699edf90582efdba7d"
+version = "0.8.2"
+source = "git+https://github.com/HaoboGu/rmk/?rev=62957531dbd74fd1e904858b2f885a9b7523b5e3#62957531dbd74fd1e904858b2f885a9b7523b5e3"
 dependencies = [
  "bitfield-struct",
  "bt-hci",
@@ -2058,8 +2058,8 @@ dependencies = [
 
 [[package]]
 name = "rmk-config"
-version = "0.6.0"
-source = "git+https://github.com/HaoboGu/rmk/?rev=158b9e84f9ca092698ae75699edf90582efdba7d#158b9e84f9ca092698ae75699edf90582efdba7d"
+version = "0.6.1"
+source = "git+https://github.com/HaoboGu/rmk/?rev=62957531dbd74fd1e904858b2f885a9b7523b5e3#62957531dbd74fd1e904858b2f885a9b7523b5e3"
 dependencies = [
  "cargo_toml",
  "config",
@@ -2109,8 +2109,8 @@ dependencies = [
 
 [[package]]
 name = "rmk-macro"
-version = "0.7.0"
-source = "git+https://github.com/HaoboGu/rmk/?rev=158b9e84f9ca092698ae75699edf90582efdba7d#158b9e84f9ca092698ae75699edf90582efdba7d"
+version = "0.7.1"
+source = "git+https://github.com/HaoboGu/rmk/?rev=62957531dbd74fd1e904858b2f885a9b7523b5e3#62957531dbd74fd1e904858b2f885a9b7523b5e3"
 dependencies = [
  "cargo_toml",
  "darling 0.20.11",
@@ -2121,16 +2121,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rmk-config",
+ "rmk-types",
  "serde",
  "serde_derive",
+ "strum",
  "syn 2.0.113",
  "toml",
 ]
 
 [[package]]
 name = "rmk-types"
-version = "0.2.1"
-source = "git+https://github.com/HaoboGu/rmk/?rev=158b9e84f9ca092698ae75699edf90582efdba7d#158b9e84f9ca092698ae75699edf90582efdba7d"
+version = "0.2.2"
+source = "git+https://github.com/HaoboGu/rmk/?rev=62957531dbd74fd1e904858b2f885a9b7523b5e3#62957531dbd74fd1e904858b2f885a9b7523b5e3"
 dependencies = [
  "bitfield-struct",
  "postcard",

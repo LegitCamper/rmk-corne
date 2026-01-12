@@ -43,7 +43,7 @@ overflow-checks = false
 lto = "fat"
 
 [dependencies]
-rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "158b9e84f9ca092698ae75699edf90582efdba7d", features = [
+rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "62957531dbd74fd1e904858b2f885a9b7523b5e3", features = [
   "nrf52840_ble",
   "split",
   "storage",

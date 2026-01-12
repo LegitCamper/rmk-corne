@@ -12,6 +12,7 @@ use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, SAADC, USBD};
 use embassy_nrf::saadc::{self, AnyInput, Input as _, Saadc};
 use embassy_nrf::{Peri, bind_interrupts, rng, usb};
+use embassy_time::Duration;
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
@@ -19,13 +20,16 @@ use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::build_ble_stack;
 use rmk::channel::EVENT_CHANNEL;
-use rmk::config::StorageConfig;
+use rmk::config::{BehaviorConfig, PositionalConfig, StorageConfig};
 use rmk::debounce::default_debouncer::DefaultDebouncer;
-use rmk::futures::future::join;
+use rmk::futures::future::join3;
+use rmk::input_device::adc::{AnalogEventType, NrfAdc};
+use rmk::input_device::battery::BatteryProcessor;
 use rmk::matrix::Matrix;
 use rmk::split::peripheral::run_rmk_split_peripheral;
 use rmk::storage::new_storage_for_split_peripheral;
-use rmk::{HostResources, run_devices};
+use rmk::types::action::KeyAction;
+use rmk::{HostResources, initialize_keymap, run_devices, run_processor_chain};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -165,11 +169,33 @@ async fn main(spawner: Spawner) {
     let debouncer = DefaultDebouncer::new();
     let mut matrix = Matrix::<_, _, _, ROW, { COL / 2 }, true>::new(row_pins, col_pins, debouncer);
 
+    // create battery monitor
+    let mut adc_device = NrfAdc::new(
+        saadc,
+        [AnalogEventType::Battery],
+        Duration::from_secs(12),
+        None,
+    );
+    let mut default_keymap = [[[KeyAction::No; 1]; 1]; 1];
+    let mut behavior_config = BehaviorConfig::default();
+    let mut per_key_config = PositionalConfig::default();
+    let keymap = initialize_keymap(
+        &mut default_keymap,
+        &mut behavior_config,
+        &mut per_key_config,
+    )
+    .await;
+    // requires keymap so simple one is created above
+    let mut battery_processor = BatteryProcessor::new(2000, 2806, &keymap);
+
     // Start
-    join(
+    join3(
         run_devices! (
-            (matrix) => EVENT_CHANNEL, // Peripheral uses EVENT_CHANNEL to send events to central
+            (matrix, adc_device) => EVENT_CHANNEL, // Peripheral uses EVENT_CHANNEL to send events to central
         ),
+        run_processor_chain! {
+            EVENT_CHANNEL => [battery_processor],
+        },
         #[cfg(feature = "peripheral_left")] // left
         run_rmk_split_peripheral(0, &stack, &mut storage),
         #[cfg(not(feature = "peripheral_left"))] // right

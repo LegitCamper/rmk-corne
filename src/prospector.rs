@@ -14,8 +14,6 @@ use ratatui::{
 use rmk::event::ControllerEvent;
 use rmk::{channel::CONTROLLER_CHANNEL, types::modifier::ModifierCombination};
 
-use crate::prospector::display::ScaledDisplay;
-
 #[derive(Default, Clone, Copy)]
 struct KeyboardState {
     battery_l: Option<u8>,
@@ -138,7 +136,7 @@ fn draw_modifiers(frame: &mut Frame, area: Rect, mods: ModifierCombination) {
 pub async fn run(display: display::DISPLAY) {
     info!("Starting display");
 
-    let mut scaled_display = ScaledDisplay::new(display);
+    let mut scaled_display = display::ScaledDisplay::new(display);
 
     let backend = EmbeddedBackend::new(&mut scaled_display, EmbeddedBackendConfig::default());
     let mut terminal = Terminal::new(backend).unwrap();
@@ -151,6 +149,14 @@ pub async fn run(display: display::DISPLAY) {
 
         let event = rmk_events.next_message_pure().await;
         match event {
+            ControllerEvent::SplitPeripheralBattery(half, bat) => {
+                if half == 0 {
+                    state.battery_l = Some(bat)
+                } else {
+                    state.battery_r = Some(bat)
+                }
+                changed = true;
+            }
             ControllerEvent::Layer(layer) => {
                 state.layer = layer;
                 changed = true;

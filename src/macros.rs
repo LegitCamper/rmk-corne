@@ -23,10 +23,10 @@ macro_rules! hrm {
     };
 }
 
-#[macro_export]
 // key or layer
+#[macro_export]
 macro_rules! kol {
-    ($x: expr, $k: ident) => {
+    ($k: ident, $x: expr) => {
         KeyAction::TapHold(
             Action::Key(KeyCode::$k),
             Action::LayerOn($x),

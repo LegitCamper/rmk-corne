@@ -1,20 +1,12 @@
-use alloc::format;
-use alloc::string::String;
-use alloc::vec;
 use defmt::info;
 use embassy_time::Timer;
-use mousefood::prelude::*;
-use ratatui::{
-    Frame, Terminal,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::Paragraph,
-};
+use embedded_graphics::mono_font::ascii;
+use kolibri_embedded_gui::button::Button;
+use kolibri_embedded_gui::label::Label;
+use kolibri_embedded_gui::style::medsize_rgb565_style;
+use kolibri_embedded_gui::ui::Ui;
 use rmk::event::ControllerEvent;
 use rmk::{channel::CONTROLLER_CHANNEL, types::modifier::ModifierCombination};
-
-include!(concat!(env!("OUT_DIR"), "/font_12x12.rs"));
 
 #[derive(Default, Clone, Copy)]
 struct KeyboardState {
@@ -40,110 +32,10 @@ fn normalize_mods(mods: ModifierCombination) -> ModifierState {
     }
 }
 
-fn safe_area(area: Rect) -> Rect {
-    Rect {
-        x: area.x + 1,
-        y: area.y + 1,
-        width: area.width.saturating_sub(2),
-        height: area.height.saturating_sub(2),
-    }
-}
-
-fn draw_ui(frame: &mut Frame, state: &KeyboardState) {
-    let area = safe_area(frame.area());
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // batteries
-            Constraint::Length(1), // modifiers
-            Constraint::Min(0),    // layer
-        ])
-        .split(area);
-
-    let (l_txt, l_style) = battery_text(state.battery_l);
-    let (r_txt, r_style) = battery_text(state.battery_r);
-
-    let line = Line::from(vec![
-        Span::styled(l_txt, l_style),
-        Span::raw("   "),
-        Span::styled(r_txt, r_style),
-    ]);
-
-    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), rows[0]);
-
-    draw_modifiers(frame, rows[1], state.modifiers);
-
-    let layers = ["Base", "Num", "Nav", "Gaming", "Gaming Upper"];
-    let layer = format!("{}", layers[state.layer as usize]);
-    let layer_text = vec![Line::from(Span::raw(layer))];
-    let layer_para = Paragraph::new(layer_text).alignment(Alignment::Center);
-    frame.render_widget(layer_para, rows[2]);
-}
-
-fn battery_text(batt: Option<u8>) -> (String, Style) {
-    match batt {
-        Some(v) => {
-            let style = if v < 20 {
-                Style::default().fg(Color::Red)
-            } else if v < 50 {
-                Style::default().fg(Color::Yellow)
-            } else {
-                Style::default().fg(Color::Green)
-            };
-
-            (format!("{v}%"), style)
-        }
-        None => (format!("???"), Style::default().fg(Color::DarkGray)),
-    }
-}
-
-fn draw_modifiers(frame: &mut Frame, area: Rect, mods: ModifierCombination) {
-    let mods = normalize_mods(mods);
-
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-        ])
-        .split(area);
-
-    let items = [
-        ("⌘", mods.win),
-        ("⇧", mods.shift),
-        ("⌃", mods.ctrl),
-        ("⌥", mods.alt),
-    ];
-
-    for ((label, active), chunk) in items.into_iter().zip(chunks.iter()) {
-        let style = if active {
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-
-        let para = Paragraph::new(label)
-            .alignment(Alignment::Center)
-            .style(style);
-
-        frame.render_widget(para, *chunk);
-    }
-}
-
-pub async fn run(display: display::DISPLAY) {
+pub async fn run(mut display: display::DISPLAY) {
     info!("Starting display");
 
     let mut scaled_display = display::ScaledDisplay::new(display);
-
-    let mut config = EmbeddedBackendConfig::default();
-    config.font_regular = FONT_12x12;
-    let backend = EmbeddedBackend::new(&mut scaled_display, config);
-    let mut terminal = Terminal::new(backend).unwrap();
 
     let mut rmk_events = CONTROLLER_CHANNEL.subscriber().unwrap();
     let mut changed = true; // true for first draw
@@ -173,11 +65,18 @@ pub async fn run(display: display::DISPLAY) {
         }
 
         if changed {
-            terminal
-                .draw(|frame| {
-                    draw_ui(frame, &state);
-                })
-                .unwrap();
+                // create the UI each frame
+                let mut ui = Ui::new_fullscreen(&mut scaled_display, medsize_rgb565_style());
+                               
+                ui.clear_background();
+                
+                ui.add(Label::new("Basic Example").with_font(ascii::FONT_10X20));
+
+                ui.add(Label::new("Basic Counter (7LOC)"));
+
+                ui.add_horizontal(Label::new("Clicked {} times"));
+                if ui.add_horizontal(Button::new("+")).clicked() {
+                }
             changed = false;
 
             Timer::after_millis(33).await;

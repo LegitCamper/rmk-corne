@@ -2,14 +2,11 @@
 #![no_main]
 #![allow(static_mut_refs)]
 
-extern crate alloc;
-
 #[macro_use]
 mod macros;
 
 mod keymap;
 use keymap::{COL, NUM_LAYER, ROW};
-use talc::{ClaimOnOom, Span, Talc, Talck};
 
 mod prospector;
 use crate::prospector::display::{ProspectorPins, create_display};
@@ -39,13 +36,6 @@ use rmk::{HostResources, initialize_encoder_keymap_and_storage, run_rmk};
 use static_cell::StaticCell;
 
 use {defmt_rtt as _, panic_probe as _};
-
-static mut ARENA: [u8; 100 * 1024] = [0; 100 * 1024];
-
-#[global_allocator]
-static ALLOCATOR: Talck<spin::Mutex<()>, ClaimOnOom> =
-    Talc::new(unsafe { ClaimOnOom::new(Span::from_array(core::ptr::addr_of!(ARENA).cast_mut())) })
-        .lock();
 
 bind_interrupts!(struct Irqs {
     USBD => usb::InterruptHandler<USBD>;

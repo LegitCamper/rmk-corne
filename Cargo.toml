@@ -27,21 +27,6 @@ name = "peripheral_right"
 path = "src/peripherals.rs"
 required-features = ["peripheral_right"]
 
-[profile.dev]
-codegen-units = 1      # better optimizations
-debug = true
-opt-level = 1
-overflow-checks = true
-lto = false
-panic = 'unwind'
-
-[profile.release]
-codegen-units = 1       # better optimizations
-debug = true            # no overhead for bare-metal
-opt-level = "z"
-overflow-checks = false
-lto = "fat"
-
 [dependencies]
 rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "62957531dbd74fd1e904858b2f885a9b7523b5e3", features = [
   "nrf52840_ble",
@@ -105,11 +90,19 @@ rand_chacha = { version = "0.3", default-features = false }
 
 embedded-graphics = "0.8.1"
 st7789v2_driver = { git = "https://github.com/LegitCamper/st7789v2_driver", rev = "c84224af3f4285d1ab05ec41e8725ce104515fc5" }
-mousefood = { git = "https://github.com/j-g00da/mousefood", rev = "693d82ae9482c32be6363e72474faeb7d962cb1b", default-features = false }
-ratatui = { version = "0.30.0", default-features = false }
+kolibri-embedded-gui = "0.1.0"
 
-spin = "0.10.0"
-talc = { version = "4.4.3", default-features = false, features = ["lock_api"] }
+[profile.dev]
+codegen-units = 1      # better optimizations
+debug = true
+opt-level = 1
+overflow-checks = true
+lto = false
+panic = 'unwind'
 
-[build-dependencies]
-eg-font-converter = { git = "https://github.com/embedded-graphics/bdf", rev = "667ad278ad267f80cf493defacedce75c11338b6" }
+[profile.release]
+codegen-units = 1       # better optimizations
+debug = true            # no overhead for bare-metal
+opt-level = "z"
+overflow-checks = false
+lto = "fat"

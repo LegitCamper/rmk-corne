@@ -16,7 +16,7 @@ This configuration is for personal reference, showing the build options for the 
 * Usage:
 
 ```bash
-RMK_LOG=y cargo make uf2 --release
+RMK_LOG=y cargo make uf2
 ```
 
 ### RMK_RESET
@@ -25,11 +25,11 @@ RMK_LOG=y cargo make uf2 --release
 * Usage:
 
 ```bash
-RMK_RESET=y cargo make uf2 --release
+RMK_RESET=y cargo make uf2 
 ```
 
 ### Both Together
 
 ```bash
-RMK_LOG=y RMK_RESET=y cargo make uf2 --release
+RMK_LOG=y RMK_RESET=y cargo make uf2
 ```

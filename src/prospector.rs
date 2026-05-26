@@ -65,18 +65,17 @@ pub async fn run(mut display: display::DISPLAY) {
         }
 
         if changed {
-                // create the UI each frame
-                let mut ui = Ui::new_fullscreen(&mut scaled_display, medsize_rgb565_style());
-                               
-                ui.clear_background();
-                
-                ui.add(Label::new("Basic Example").with_font(ascii::FONT_10X20));
+            // create the UI each frame
+            let mut ui = Ui::new_fullscreen(&mut scaled_display, medsize_rgb565_style());
 
-                ui.add(Label::new("Basic Counter (7LOC)"));
+            ui.clear_background().unwrap();
 
-                ui.add_horizontal(Label::new("Clicked {} times"));
-                if ui.add_horizontal(Button::new("+")).clicked() {
-                }
+            ui.add(Label::new("Basic Example").with_font(ascii::FONT_10X20));
+
+            ui.add(Label::new("Basic Counter (7LOC)"));
+
+            ui.add_horizontal(Label::new("Clicked {} times"));
+            if ui.add_horizontal(Button::new("+")).clicked() {}
             changed = false;
 
             Timer::after_millis(33).await;

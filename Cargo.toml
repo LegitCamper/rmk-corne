@@ -6,16 +6,18 @@ description = "Keyboard firmware written in Rust"
 edition = "2024"
 
 [features]
-no_reset = []
-reset = []
+default = ["reset", "prospector"]
+central = ["rmk/host"]
 peripheral_left = []
 peripheral_right = []
-no_log = []
+reset = []
 usb_logging = ["rmk/usb_log"]
+prospector = ["embedded-graphics", "st7789v2_driver", "kolibri-embedded-gui"]
 
 [[bin]]
 name = "central"
 path = "src/central.rs"
+required-features = ["central"]
 
 [[bin]]
 name = "peripheral_left"
@@ -35,7 +37,6 @@ rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "62957531dbd74fd1e904858b
   "async_matrix",
   "adafruit_bl",
   "vial",
-  "vial_lock",
 ], default-features = false }
 nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", features = [
   "defmt",
@@ -71,13 +72,7 @@ embassy-executor = { version = "0.9", features = [
   "arch-cortex-m",
   "executor-thread",
 ] }
-embassy-usb = "0.5.1"
-embassy-sync = "0.7.2"
-embassy-embedded-hal = "0.5.0"
 embassy-futures = "0.1.2"
-
-embedded-hal = "1.0.0"
-embedded-hal-async = "1.0.0"
 
 defmt = "1.0"
 defmt-rtt = "1.0"
@@ -88,9 +83,10 @@ rand = { version = "0.8.4", default-features = false }
 rand_core = { version = "0.6" }
 rand_chacha = { version = "0.3", default-features = false }
 
-embedded-graphics = "0.8.1"
-st7789v2_driver = { git = "https://github.com/LegitCamper/st7789v2_driver", rev = "c84224af3f4285d1ab05ec41e8725ce104515fc5" }
-kolibri-embedded-gui = "0.1.0"
+# prospector
+embedded-graphics = { version = "0.8.1", optional = true }
+st7789v2_driver = { git = "https://github.com/LegitCamper/st7789v2_driver", rev = "c84224af3f4285d1ab05ec41e8725ce104515fc5", optional = true }
+kolibri-embedded-gui = { version = "0.1.0", optional = true }
 
 [profile.dev]
 codegen-units = 1      # better optimizations

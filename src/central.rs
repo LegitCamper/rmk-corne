@@ -8,11 +8,14 @@ mod macros;
 mod keymap;
 use keymap::{COL, NUM_LAYER, ROW};
 
+#[cfg(feature = "prospector")]
 mod prospector;
+#[cfg(feature = "prospector")]
 use crate::prospector::display::{ProspectorPins, create_display};
 
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
+use embassy_futures::join::{join, join3, join4};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, SPI3, USBD};
 use embassy_nrf::saadc::{self};
@@ -26,7 +29,6 @@ use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::build_ble_stack;
 use rmk::config::{BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig};
-use rmk::futures::future::{join3, join4};
 use rmk::input_device::Runnable;
 use rmk::keyboard::Keyboard;
 use rmk::split::ble::central::{read_peripheral_addresses, scan_peripherals};
@@ -170,24 +172,26 @@ async fn main(spawner: Spawner) {
         EncoderAction::default();
         [] as [EncoderAction; 0]
     }; NUM_LAYER];
-    let (keymap, mut storage) = initialize_encoder_keymap_and_storage::<_, ROW, COL, NUM_LAYER, 0>(
-        &mut default_keymap,
-        &mut encoder_config,
-        flash,
-        &storage_config,
-        &mut behavior_config,
-        &mut key_config,
-    )
-    .await;
+    let (keymap, mut storage) =
+        initialize_encoder_keymap_and_storage::<_, ROW, COL, { NUM_LAYER }, 0>(
+            &mut default_keymap,
+            &mut encoder_config,
+            flash,
+            &storage_config,
+            &mut behavior_config,
+            &mut key_config,
+        )
+        .await;
 
     // Initialize the matrix and keyboard
     let mut keyboard = Keyboard::new(&keymap);
 
     // Read peripheral address from storage
     let peripheral_addrs =
-        read_peripheral_addresses::<2, _, ROW, COL, NUM_LAYER, 0>(&mut storage).await;
+        read_peripheral_addresses::<2, _, ROW, COL, { NUM_LAYER }, 0>(&mut storage).await;
 
     // create prospector display
+    #[cfg(feature = "prospector")]
     let (display, _backlight_pin) = create_display(ProspectorPins {
         spi: p.SPI3,
         dc: p.P1_12,
@@ -200,7 +204,7 @@ async fn main(spawner: Spawner) {
     .await;
 
     // Start
-    join3(
+    let start = join(
         keyboard.run(),
         join4(
             scan_peripherals(&stack, &peripheral_addrs),
@@ -208,7 +212,11 @@ async fn main(spawner: Spawner) {
             run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
             run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
         ),
-        prospector::run(display),
-    )
-    .await;
+    );
+
+    #[cfg(feature = "prospector")]
+    join(start, prospector::run(display)).await;
+
+    #[cfg(not(feature = "prospector"))]
+    start.await;
 }

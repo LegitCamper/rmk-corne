@@ -196,9 +196,9 @@ async fn main(spawner: Spawner) {
         run_processor_chain! {
             EVENT_CHANNEL => [battery_processor],
         },
-        #[cfg(feature = "peripheral_left")] // left
+        #[cfg(feature = "peripheral_left")]
         run_rmk_split_peripheral(0, &stack, &mut storage),
-        #[cfg(not(feature = "peripheral_left"))] // right
+        #[cfg(not(feature = "peripheral_left"))]
         run_rmk_split_peripheral(1, &stack, &mut storage),
     )
     .await;

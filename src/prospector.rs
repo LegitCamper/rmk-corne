@@ -1,7 +1,6 @@
 use defmt::info;
-use embassy_time::Timer;
+use embassy_futures::yield_now;
 use embedded_graphics::mono_font::ascii;
-use kolibri_embedded_gui::button::Button;
 use kolibri_embedded_gui::label::Label;
 use kolibri_embedded_gui::style::medsize_rgb565_style;
 use kolibri_embedded_gui::ui::Ui;
@@ -32,30 +31,74 @@ fn normalize_mods(mods: ModifierCombination) -> ModifierState {
     }
 }
 
+fn battery_text(name: &str, value: Option<u8>) -> heapless::String<32> {
+    let mut s = heapless::String::<32>::new();
+    match value {
+        Some(v) => {
+            let _ = core::fmt::write(&mut s, format_args!("{name}: {v}%"));
+        }
+        None => {
+            let _ = core::fmt::write(&mut s, format_args!("{name}: --"));
+        }
+    }
+    s
+}
+
+fn layer_text(layer: u8) -> heapless::String<32> {
+    let mut s = heapless::String::<32>::new();
+    let _ = core::fmt::write(&mut s, format_args!("Layer: {layer}"));
+    s
+}
+
+fn modifiers_text(mods: ModifierCombination) -> heapless::String<64> {
+    let m = normalize_mods(mods);
+    let mut s = heapless::String::<64>::new();
+
+    let _ = core::fmt::write(
+        &mut s,
+        format_args!(
+            "Mods: {}{}{}{}",
+            if m.ctrl { "CTRL " } else { "" },
+            if m.shift { "SHIFT " } else { "" },
+            if m.alt { "ALT " } else { "" },
+            if m.win { "WIN" } else { "" },
+        ),
+    );
+
+    if s == "Mods: " {
+        let _ = core::fmt::write(&mut s, format_args!("Mods: none"));
+    }
+
+    s
+}
+
 pub async fn run(mut display: display::DISPLAY) {
     info!("Starting display");
 
-    let mut scaled_display = display::ScaledDisplay::new(display);
-
     let mut rmk_events = CONTROLLER_CHANNEL.subscriber().unwrap();
-    let mut changed = true; // true for first draw
+    let mut state = KeyboardState::default();
+    let mut changed = true;
 
     loop {
-        let mut state = KeyboardState::default();
-
         let event = rmk_events.next_message_pure().await;
+
         match event {
             ControllerEvent::SplitPeripheralBattery(half, bat) => {
                 if half == 0 {
-                    state.battery_l = Some(bat)
-                } else {
-                    state.battery_r = Some(bat)
+                    if state.battery_l != Some(bat) {
+                        state.battery_l = Some(bat);
+                        changed = true;
+                    }
+                } else if state.battery_r != Some(bat) {
+                    state.battery_r = Some(bat);
+                    changed = true;
                 }
-                changed = true;
             }
             ControllerEvent::Layer(layer) => {
-                state.layer = layer;
-                changed = true;
+                if state.layer != layer {
+                    state.layer = layer;
+                    changed = true;
+                }
             }
             ControllerEvent::Modifier(comb) => {
                 state.modifiers = comb;
@@ -65,21 +108,25 @@ pub async fn run(mut display: display::DISPLAY) {
         }
 
         if changed {
-            // create the UI each frame
-            let mut ui = Ui::new_fullscreen(&mut scaled_display, medsize_rgb565_style());
-
+            let mut ui = Ui::new_fullscreen(&mut display, medsize_rgb565_style());
             ui.clear_background().unwrap();
 
-            ui.add(Label::new("Basic Example").with_font(ascii::FONT_10X20));
+            let title = "Keyboard Status";
+            let layer = layer_text(state.layer);
+            let batt_l = battery_text("Left", state.battery_l);
+            let batt_r = battery_text("Right", state.battery_r);
+            let mods = modifiers_text(state.modifiers);
 
-            ui.add(Label::new("Basic Counter (7LOC)"));
+            ui.add(Label::new(title).with_font(ascii::FONT_10X20));
+            ui.add(Label::new(layer.as_str()));
+            ui.add(Label::new(batt_l.as_str()));
+            ui.add(Label::new(batt_r.as_str()));
+            ui.add(Label::new(mods.as_str()));
 
-            ui.add_horizontal(Label::new("Clicked {} times"));
-            if ui.add_horizontal(Button::new("+")).clicked() {}
             changed = false;
-
-            Timer::after_millis(33).await;
         }
+
+        yield_now().await;
     }
 }
 
@@ -144,59 +191,5 @@ pub mod display {
         Timer::after_millis(1000).await;
 
         (display, bl)
-    }
-
-    const SCALE: usize = 4;
-    const SCALED_WIDTH: usize = WIDTH / SCALE;
-    const SCALED_HEIGHT: usize = HEIGHT / SCALE;
-
-    pub struct ScaledDisplay {
-        display: DISPLAY,
-    }
-
-    impl ScaledDisplay {
-        pub fn new(display: DISPLAY) -> Self {
-            Self { display }
-        }
-    }
-
-    impl DrawTarget for ScaledDisplay {
-        type Color = Rgb565;
-
-        type Error = ();
-
-        fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-        where
-            I: IntoIterator<Item = Pixel<Self::Color>>,
-        {
-            for Pixel(coord, color) in pixels {
-                let base_x = coord.x * SCALE as i32;
-                let base_y = coord.y * SCALE as i32;
-
-                // Draw a 4×4 block for each logical pixel
-                for dy in 0..SCALE {
-                    for dx in 0..SCALE {
-                        let px = base_x as usize + dx;
-                        let py = base_y as usize + dy;
-
-                        self.display.draw_iter(core::iter::once(Pixel(
-                            Point {
-                                x: px as i32,
-                                y: py as i32,
-                            },
-                            color,
-                        )))?;
-                    }
-                }
-            }
-
-            Ok(())
-        }
-    }
-
-    impl OriginDimensions for ScaledDisplay {
-        fn size(&self) -> Size {
-            Size::new(SCALED_WIDTH as u32, SCALED_HEIGHT as u32)
-        }
     }
 }

@@ -1,18 +1,18 @@
-#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
+#[cfg(feature = "central")]
 use rmk::types::{
     action::{Action, KeyAction, MorseMode, MorseProfile},
     keycode::{HidKeyCode, KeyCode},
     modifier::ModifierCombination,
 };
-#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
+#[cfg(feature = "central")]
 use rmk::{a, k, mo, to, wm};
 
 pub(crate) const COL: usize = 12;
 pub(crate) const ROW: usize = 4;
-#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
+#[cfg(feature = "central")]
 pub(crate) const NUM_LAYER: usize = 5;
 
-#[cfg(not(any(feature = "peripheral_left", feature = "peripheral_right")))]
+#[cfg(feature = "central")]
 #[rustfmt::skip]
 pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
     [

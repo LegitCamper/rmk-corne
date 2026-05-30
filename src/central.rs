@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![allow(static_mut_refs)]
 
 #[macro_use]
 mod macros;
@@ -15,7 +14,7 @@ use crate::prospector::display::{ProspectorPins, create_display};
 
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
-use embassy_futures::join::{join, join3, join4};
+use embassy_futures::join::{join, join4};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, SPI3, USBD};
 use embassy_nrf::saadc::{self};
@@ -192,7 +191,7 @@ async fn main(spawner: Spawner) {
 
     // create prospector display
     #[cfg(feature = "prospector")]
-    let (display, _backlight_pin) = create_display(ProspectorPins {
+    let (frame_buffer, display, _backlight_pin) = create_display(ProspectorPins {
         spi: p.SPI3,
         dc: p.P1_12,
         sck: p.P1_13,
@@ -215,7 +214,7 @@ async fn main(spawner: Spawner) {
     );
 
     #[cfg(feature = "prospector")]
-    join(start, prospector::run(display)).await;
+    join(start, prospector::run(frame_buffer, display)).await;
 
     #[cfg(not(feature = "prospector"))]
     start.await;

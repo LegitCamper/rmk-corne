@@ -1,11 +1,14 @@
 use defmt::info;
-use embassy_futures::yield_now;
 use embedded_graphics::mono_font::ascii;
+use embedded_graphics::pixelcolor::Rgb565;
 use kolibri_embedded_gui::label::Label;
 use kolibri_embedded_gui::style::medsize_rgb565_style;
 use kolibri_embedded_gui::ui::Ui;
+use lcd_async::raw_framebuf::RawFrameBuf;
 use rmk::event::ControllerEvent;
 use rmk::{channel::CONTROLLER_CHANNEL, types::modifier::ModifierCombination};
+
+use crate::prospector::display::{HEIGHT, WIDTH};
 
 #[derive(Default, Clone, Copy)]
 struct KeyboardState {
@@ -72,86 +75,106 @@ fn modifiers_text(mods: ModifierCombination) -> heapless::String<64> {
     s
 }
 
-pub async fn run(mut display: display::DISPLAY) {
-    info!("Starting display");
+pub async fn run(mut fb: RawFrameBuf<Rgb565, &'static mut [u8]>, mut display: display::DISPLAY) {
+    info!("Starting display task");
 
     let mut rmk_events = CONTROLLER_CHANNEL.subscriber().unwrap();
     let mut state = KeyboardState::default();
-    let mut changed = true;
+
+    let mut needs_redraw = true;
 
     loop {
-        let event = rmk_events.next_message_pure().await;
+        let event_result = embassy_time::with_timeout(
+            embassy_time::Duration::from_millis(50),
+            rmk_events.next_message_pure(),
+        )
+        .await;
 
-        match event {
-            ControllerEvent::SplitPeripheralBattery(half, bat) => {
-                if half == 0 {
-                    if state.battery_l != Some(bat) {
-                        state.battery_l = Some(bat);
-                        changed = true;
+        match event_result {
+            Ok(event) => match event {
+                ControllerEvent::SplitPeripheralBattery(half, bat) => {
+                    let target = if half == 0 {
+                        &mut state.battery_l
+                    } else {
+                        &mut state.battery_r
+                    };
+                    if *target != Some(bat) {
+                        *target = Some(bat);
+                        needs_redraw = true;
                     }
-                } else if state.battery_r != Some(bat) {
-                    state.battery_r = Some(bat);
-                    changed = true;
                 }
-            }
-            ControllerEvent::Layer(layer) => {
-                if state.layer != layer {
-                    state.layer = layer;
-                    changed = true;
+                ControllerEvent::Layer(layer) => {
+                    if state.layer != layer {
+                        state.layer = layer;
+                        needs_redraw = true;
+                    }
                 }
-            }
-            ControllerEvent::Modifier(comb) => {
-                state.modifiers = comb;
-                changed = true;
-            }
-            _ => {}
+                ControllerEvent::Modifier(comb) => {
+                    if state.modifiers != comb {
+                        state.modifiers = comb;
+                        needs_redraw = true;
+                    }
+                }
+                _ => {}
+            },
+            Err(_) => {}
         }
 
-        if changed {
-            let mut ui = Ui::new_fullscreen(&mut display, medsize_rgb565_style());
+        if needs_redraw {
+            let mut ui = Ui::new_fullscreen(&mut fb, medsize_rgb565_style());
             ui.clear_background().unwrap();
 
-            let title = "Keyboard Status";
             let layer = layer_text(state.layer);
             let batt_l = battery_text("Left", state.battery_l);
             let batt_r = battery_text("Right", state.battery_r);
             let mods = modifiers_text(state.modifiers);
 
-            ui.add(Label::new(title).with_font(ascii::FONT_10X20));
+            ui.add(Label::new("Keyboard Status").with_font(ascii::FONT_10X20));
             ui.add(Label::new(layer.as_str()));
             ui.add(Label::new(batt_l.as_str()));
             ui.add(Label::new(batt_r.as_str()));
             ui.add(Label::new(mods.as_str()));
 
-            changed = false;
-        }
+            display
+                .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, fb.as_mut_bytes())
+                .await
+                .unwrap();
 
-        yield_now().await;
+            needs_redraw = false;
+        }
     }
 }
 
 pub mod display {
     use crate::Irqs;
 
+    use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice;
     use embassy_nrf::{
         Peri,
         gpio::{Level, Output, OutputDrive},
         peripherals::{P0_29, P1_11, P1_12, P1_13, P1_14, P1_15, SPI3},
         spim::{self, Frequency, Spim},
     };
+    use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
     use embassy_time::{Delay, Timer};
-    use embedded_graphics::{
-        Pixel,
-        draw_target::DrawTarget,
-        prelude::{OriginDimensions, Point, Size},
+    use embedded_graphics::{draw_target::DrawTarget, pixelcolor::Rgb565, prelude::RgbColor};
+    use lcd_async::{
+        Builder, Display,
+        interface::{self, SpiInterface},
+        models::ST7789,
+        options::{ColorInversion, Orientation, Rotation},
+        raw_framebuf::RawFrameBuf,
     };
-    use embedded_graphics::{pixelcolor::Rgb565, prelude::RgbColor};
-    use st7789v2_driver::{HORIZONTAL, ST7789V2};
+    use static_cell::StaticCell;
 
-    const WIDTH: usize = 280;
-    const HEIGHT: usize = 240;
+    const PIXEL_SIZE: usize = 2;
+    pub const WIDTH: usize = 280;
+    pub const HEIGHT: usize = 240;
+    pub const FRAME_SIZE: usize = (WIDTH as usize) * (HEIGHT as usize) * PIXEL_SIZE;
 
-    pub type DISPLAY = ST7789V2<Spim<'static>, Output<'static>, Output<'static>, Output<'static>>;
+    static FRAME_BUFFER: StaticCell<[u8; FRAME_SIZE]> = StaticCell::new();
+
+    static SPI_BUS: StaticCell<Mutex<NoopRawMutex, Spim<'static>>> = StaticCell::new();
 
     pub struct ProspectorPins {
         pub spi: Peri<'static, SPI3>,
@@ -163,7 +186,22 @@ pub mod display {
         pub rst: Peri<'static, P0_29>,
     }
 
-    pub async fn create_display(pins: ProspectorPins) -> (DISPLAY, Output<'static>) {
+    pub type DISPLAY = Display<
+        SpiInterface<
+            SpiDevice<'static, NoopRawMutex, Spim<'static>, Output<'static>>,
+            Output<'static>,
+        >,
+        ST7789,
+        Output<'static>,
+    >;
+
+    pub async fn create_display(
+        pins: ProspectorPins,
+    ) -> (
+        RawFrameBuf<Rgb565, &'static mut [u8]>,
+        DISPLAY,
+        Output<'static>,
+    ) {
         let mut config = spim::Config::default();
         config.frequency = Frequency::M32;
         let spim = Spim::new_txonly(pins.spi, Irqs, pins.sck, pins.mosi, config.clone());
@@ -173,23 +211,38 @@ pub mod display {
         let cs = Output::new(pins.cs, Level::High, OutputDrive::Standard);
         let rst = Output::new(pins.rst, Level::Low, OutputDrive::Standard);
 
-        let mut display = ST7789V2::new(
-            spim,
-            dc,
-            cs,
-            rst,
-            true,
-            HORIZONTAL,
-            WIDTH as u32,
-            HEIGHT as u32,
-        );
+        let spi_bus = SPI_BUS.init(Mutex::new(spim));
+        let spi_dev = SpiDevice::new(spi_bus, cs);
+        let di = interface::SpiInterface::new(spi_dev, dc);
 
-        display.init(&mut Delay).unwrap();
+        let mut display = Builder::new(ST7789, di)
+            .reset_pin(rst)
+            .display_size(WIDTH as u16, HEIGHT as u16)
+            .orientation(Orientation {
+                rotation: Rotation::Deg0,
+                mirrored: false,
+            })
+            .display_offset(0, 0)
+            .invert_colors(ColorInversion::Inverted)
+            .init(&mut Delay)
+            .await
+            .unwrap();
 
-        display.clear(Rgb565::BLACK).unwrap();
+        let frame_buffer = FRAME_BUFFER.init_with(|| [0; FRAME_SIZE]);
+
+        let mut raw_fb =
+            RawFrameBuf::<Rgb565, _>::new(frame_buffer.as_mut_slice(), WIDTH.into(), HEIGHT.into());
+
+        raw_fb.clear(Rgb565::BLACK).unwrap();
+
+        display
+            .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, raw_fb.as_mut_bytes())
+            .await
+            .unwrap();
+
         bl.set_high();
         Timer::after_millis(1000).await;
 
-        (display, bl)
+        (raw_fb, display, bl)
     }
 }

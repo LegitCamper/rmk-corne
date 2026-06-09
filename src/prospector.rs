@@ -8,7 +8,7 @@ use lcd_async::raw_framebuf::RawFrameBuf;
 use rmk::event::ControllerEvent;
 use rmk::{channel::CONTROLLER_CHANNEL, types::modifier::ModifierCombination};
 
-use crate::prospector::display::{HEIGHT, WIDTH};
+use crate::prospector::display::{FRAME_BUFFER, HEIGHT, WIDTH};
 
 #[derive(Default, Clone, Copy)]
 struct KeyboardState {
@@ -75,7 +75,7 @@ fn modifiers_text(mods: ModifierCombination) -> heapless::String<64> {
     s
 }
 
-pub async fn run(mut fb: RawFrameBuf<Rgb565, &'static mut [u8]>, mut display: display::DISPLAY) {
+pub async fn run(mut display: display::DISPLAY) {
     info!("Starting display task");
 
     let mut rmk_events = CONTROLLER_CHANNEL.subscriber().unwrap();
@@ -121,24 +121,29 @@ pub async fn run(mut fb: RawFrameBuf<Rgb565, &'static mut [u8]>, mut display: di
         }
 
         if needs_redraw {
-            let mut ui = Ui::new_fullscreen(&mut fb, medsize_rgb565_style());
-            ui.clear_background().unwrap();
+            {
+                let frame_buffer_slice: &'static mut [u8] = unsafe { &mut FRAME_BUFFER[..] };
+                let mut fbuf = RawFrameBuf::<Rgb565, _>::new(frame_buffer_slice, WIDTH, HEIGHT);
 
-            let layer = layer_text(state.layer);
-            let batt_l = battery_text("Left", state.battery_l);
-            let batt_r = battery_text("Right", state.battery_r);
-            let mods = modifiers_text(state.modifiers);
+                let mut ui = Ui::new_fullscreen(&mut fbuf, medsize_rgb565_style());
+                ui.clear_background().unwrap();
 
-            ui.add(Label::new("Keyboard Status").with_font(ascii::FONT_10X20));
-            ui.add(Label::new(layer.as_str()));
-            ui.add(Label::new(batt_l.as_str()));
-            ui.add(Label::new(batt_r.as_str()));
-            ui.add(Label::new(mods.as_str()));
+                let layer = layer_text(state.layer);
+                let batt_l = battery_text("Left", state.battery_l);
+                let batt_r = battery_text("Right", state.battery_r);
+                let mods = modifiers_text(state.modifiers);
 
-            display
-                .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, fb.as_mut_bytes())
-                .await
-                .unwrap();
+                ui.add(Label::new("Keyboard Status").with_font(ascii::FONT_10X20));
+                ui.add(Label::new(layer.as_str()));
+                ui.add(Label::new(batt_l.as_str()));
+                ui.add(Label::new(batt_r.as_str()));
+                ui.add(Label::new(mods.as_str()));
+            }
+
+            // display
+            //     .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, &mut FRAME_BUFFER)
+            //     .await
+            //     .unwrap();
 
             needs_redraw = false;
         }
@@ -170,9 +175,10 @@ pub mod display {
     const PIXEL_SIZE: usize = 2;
     pub const WIDTH: usize = 280;
     pub const HEIGHT: usize = 240;
-    pub const FRAME_SIZE: usize = (WIDTH as usize) * (HEIGHT as usize) * PIXEL_SIZE;
 
-    static FRAME_BUFFER: StaticCell<[u8; FRAME_SIZE]> = StaticCell::new();
+    const FRAME_BUFFER_SIZE: usize = WIDTH * HEIGHT; // * PIXEL_SIZE
+
+    pub static mut FRAME_BUFFER: [u8; FRAME_BUFFER_SIZE] = [0; FRAME_BUFFER_SIZE];
 
     static SPI_BUS: StaticCell<Mutex<NoopRawMutex, Spim<'static>>> = StaticCell::new();
 
@@ -195,13 +201,7 @@ pub mod display {
         Output<'static>,
     >;
 
-    pub async fn create_display(
-        pins: ProspectorPins,
-    ) -> (
-        RawFrameBuf<Rgb565, &'static mut [u8]>,
-        DISPLAY,
-        Output<'static>,
-    ) {
+    pub async fn create_display(pins: ProspectorPins) -> (DISPLAY, Output<'static>) {
         let mut config = spim::Config::default();
         config.frequency = Frequency::M32;
         let spim = Spim::new_txonly(pins.spi, Irqs, pins.sck, pins.mosi, config.clone());
@@ -217,32 +217,33 @@ pub mod display {
 
         let mut display = Builder::new(ST7789, di)
             .reset_pin(rst)
-            .display_size(WIDTH as u16, HEIGHT as u16)
+            .display_size(240, 280)
+            .display_offset(0, 20)
+            .invert_colors(ColorInversion::Inverted)
             .orientation(Orientation {
-                rotation: Rotation::Deg0,
+                rotation: Rotation::Deg90,
                 mirrored: false,
             })
-            .display_offset(0, 0)
-            .invert_colors(ColorInversion::Inverted)
             .init(&mut Delay)
             .await
             .unwrap();
 
-        let frame_buffer = FRAME_BUFFER.init_with(|| [0; FRAME_SIZE]);
-
-        let mut raw_fb =
-            RawFrameBuf::<Rgb565, _>::new(frame_buffer.as_mut_slice(), WIDTH.into(), HEIGHT.into());
-
-        raw_fb.clear(Rgb565::BLACK).unwrap();
+        {
+            let frame_buffer_slice: &'static mut [u8] = unsafe { &mut FRAME_BUFFER[..] };
+            let mut fbuf = RawFrameBuf::<Rgb565, _>::new(frame_buffer_slice, WIDTH, HEIGHT);
+            fbuf.clear(Rgb565::RED).unwrap();
+        }
 
         display
-            .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, raw_fb.as_mut_bytes())
+            .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, &mut unsafe {
+                FRAME_BUFFER
+            })
             .await
             .unwrap();
 
         bl.set_high();
         Timer::after_millis(1000).await;
 
-        (raw_fb, display, bl)
+        (display, bl)
     }
 }

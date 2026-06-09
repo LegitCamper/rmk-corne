@@ -6,7 +6,7 @@ description = "Keyboard firmware written in Rust"
 edition = "2024"
 
 [features]
-default = ["reset", "prospector"]
+default = []
 central = ["rmk/host"]
 peripheral_left = []
 peripheral_right = []

@@ -191,7 +191,7 @@ async fn main(spawner: Spawner) {
 
     // create prospector display
     #[cfg(feature = "prospector")]
-    let (frame_buffer, display, _backlight_pin) = create_display(ProspectorPins {
+    let (display, _backlight_pin) = create_display(ProspectorPins {
         spi: p.SPI3,
         dc: p.P1_12,
         sck: p.P1_13,
@@ -214,7 +214,7 @@ async fn main(spawner: Spawner) {
     );
 
     #[cfg(feature = "prospector")]
-    join(start, prospector::run(frame_buffer, display)).await;
+    join(start, prospector::run(display)).await;
 
     #[cfg(not(feature = "prospector"))]
     start.await;

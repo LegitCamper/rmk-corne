@@ -28,8 +28,11 @@ RMK_LOG=y cargo make uf2
 RMK_RESET=y cargo make uf2 
 ```
 
-### Both Together
+### PROSPECTOR
+
+* Enables the prospector display.
+* Usage:
 
 ```bash
-RMK_LOG=y RMK_RESET=y cargo make uf2
+PROSPECTOR=y cargo make uf2 
 ```

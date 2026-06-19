@@ -9,9 +9,9 @@ use embassy_executor::Spawner;
 use embassy_nrf::gpio::{Input, Output};
 use embassy_nrf::interrupt::{self, InterruptExt};
 use embassy_nrf::mode::Async;
-use embassy_nrf::peripherals::{RNG, SAADC, USBD};
+use embassy_nrf::peripherals::{RNG, SAADC};
 use embassy_nrf::saadc::{self, AnyInput, Input as _, Saadc};
-use embassy_nrf::{Peri, bind_interrupts, rng, usb};
+use embassy_nrf::{Peri, bind_interrupts, rng};
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
@@ -33,11 +33,10 @@ mod keymap;
 use keymap::{COL, ROW};
 
 bind_interrupts!(struct Irqs {
-    USBD => usb::InterruptHandler<USBD>;
     SAADC => saadc::InterruptHandler;
     RNG => rng::InterruptHandler<RNG>;
     EGU0_SWI0 => nrf_sdc::mpsl::LowPrioInterruptHandler;
-    CLOCK_POWER => nrf_sdc::mpsl::ClockInterruptHandler, usb::vbus_detect::InterruptHandler;
+    CLOCK_POWER => nrf_sdc::mpsl::ClockInterruptHandler;
     RADIO => nrf_sdc::mpsl::HighPrioInterruptHandler;
     TIMER0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
     RTC0 => nrf_sdc::mpsl::HighPrioInterruptHandler;

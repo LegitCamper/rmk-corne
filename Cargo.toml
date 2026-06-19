@@ -6,16 +6,17 @@ description = "Keyboard firmware written in Rust"
 edition = "2024"
 
 [features]
-no_reset = []
-reset = []
+default = []
+central = ["rmk/host"]
 peripheral_left = []
 peripheral_right = []
-no_log = []
+reset = []
 usb_logging = ["rmk/usb_log"]
 
 [[bin]]
 name = "central"
 path = "src/central.rs"
+required-features = ["central"]
 
 [[bin]]
 name = "peripheral_left"
@@ -43,14 +44,14 @@ overflow-checks = false
 lto = "fat"
 
 [dependencies]
-rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "158b9e84f9ca092698ae75699edf90582efdba7d", features = [
+rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "62957531dbd74fd1e904858b2f885a9b7523b5e3", features = [
   "nrf52840_ble",
   "split",
   "storage",
   "async_matrix",
   "adafruit_bl",
   "vial",
-  "vial_lock"
+  "vial_lock",
 ], default-features = false }
 nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", features = [
   "defmt",
@@ -87,6 +88,7 @@ embassy-executor = { version = "0.9", features = [
   "executor-thread",
 ] }
 embassy-usb = "0.5.1"
+usbd-hid = "0.10.0"
 defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }

@@ -1,10 +1,11 @@
 [env]
 RMK_RESET_ARG = { script = [
-  "if [ -n \"$RMK_RESET\" ]; then echo \"reset\"; else echo \"no_reset\"; fi",
+  "if [ -n \"$RMK_RESET\" ]; then echo \"reset\"; fi",
 ] }
 RMK_LOG_ARG = { script = [
-  "if [ -n \"$RMK_LOG\" ]; then echo \"usb_logging\"; else echo \"no_log\"; fi",
+  "if [ -n \"$RMK_LOG\" ]; then echo \"usb_logging\"; fi",
 ] }
+RUST_VER = "1.89.0"
 
 [tasks.install-llvm-tools]
 install_crate = { rustup_component_name = "llvm-tools" }
@@ -21,12 +22,13 @@ install_crate = { crate_name = "cargo-binutils", binary = "cargo", test_arg = [
 ] }
 command = "cargo"
 args = [
+  "+${RUST_VER}",
   "objcopy",
   "--release",
   "--bin",
   "central",
   "--features",
-  "${RMK_RESET_ARG},${RMK_LOG_ARG}",
+  "central,${RMK_RESET_ARG},${RMK_LOG_ARG}",
   "--",
   "-O",
   "ihex",
@@ -41,6 +43,7 @@ install_crate = { crate_name = "cargo-binutils", binary = "cargo", test_arg = [
 ] }
 command = "cargo"
 args = [
+  "+${RUST_VER}",
   "objcopy",
   "--release",
   "--bin",
@@ -61,6 +64,7 @@ install_crate = { crate_name = "cargo-binutils", binary = "cargo", test_arg = [
 ] }
 command = "cargo"
 args = [
+  "+${RUST_VER}",
   "objcopy",
   "--release",
   "--bin",

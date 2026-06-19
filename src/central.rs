@@ -16,15 +16,18 @@ use embassy_nrf::saadc::{self};
 use embassy_nrf::usb::Driver;
 use embassy_nrf::usb::vbus_detect::HardwareVbusDetect;
 use embassy_nrf::{bind_interrupts, rng, usb};
+use embassy_usb::class::hid::{Config as HidConfig, HidWriter, State as HidState};
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
 use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::build_ble_stack;
+use rmk::channel::CONTROLLER_CHANNEL;
 use rmk::config::{BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig};
 use rmk::controller::EventController as _;
 use rmk::controller::led_indicator::KeyboardIndicatorController;
+use rmk::event::ControllerEvent;
 use rmk::futures::future::{join, join4};
 use rmk::input_device::Runnable;
 use rmk::keyboard::Keyboard;
@@ -33,6 +36,9 @@ use rmk::split::central::run_peripheral_manager;
 use rmk::types::action::EncoderAction;
 use rmk::{HostResources, initialize_encoder_keymap_and_storage, run_rmk};
 use static_cell::StaticCell;
+use usbd_hid::descriptor::AsInputReport;
+use usbd_hid::descriptor::SerializedDescriptor;
+use usbd_hid::descriptor::gen_hid_descriptor;
 
 use {defmt_rtt as _, panic_probe as _};
 

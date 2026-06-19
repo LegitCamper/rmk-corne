@@ -191,20 +191,9 @@ async fn main(spawner: Spawner) {
     let peripheral_addrs =
         read_peripheral_addresses::<2, _, ROW, COL, NUM_LAYER, 0>(&mut storage).await;
 
-    // Initialize the controllers
-    let mut capslock_led = KeyboardIndicatorController::new(
-        Output::new(
-            p.P0_00,
-            embassy_nrf::gpio::Level::Low,
-            embassy_nrf::gpio::OutputDrive::Standard,
-        ),
-        false,
-        rmk::types::led_indicator::LedIndicatorType::CapsLock,
-    );
-
     // Start
     join(
-        join(keyboard.run(), capslock_led.event_loop()),
+        keyboard.run(),
         join4(
             scan_peripherals(&stack, &peripheral_addrs),
             run_peripheral_manager::<ROW, COL, 0, 0, _>(0, &peripheral_addrs, &stack),

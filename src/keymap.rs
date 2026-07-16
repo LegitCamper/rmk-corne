@@ -1,18 +1,20 @@
-#[cfg(feature = "central")]
+// The wired central (peripheral_left when the wired feature is on) also owns
+// the keymap directly, since there's no separate BLE dongle to hold it.
+#[cfg(any(feature = "central", all(feature = "wired", feature = "peripheral_left")))]
 use rmk::types::{
     action::{Action, KeyAction, MorseMode, MorseProfile},
     keycode::{HidKeyCode, KeyCode},
     modifier::ModifierCombination,
 };
-#[cfg(feature = "central")]
+#[cfg(any(feature = "central", all(feature = "wired", feature = "peripheral_left")))]
 use rmk::{a, k, mo, to, wm};
 
 pub(crate) const COL: usize = 12;
 pub(crate) const ROW: usize = 4;
-#[cfg(feature = "central")]
+#[cfg(any(feature = "central", all(feature = "wired", feature = "peripheral_left")))]
 pub(crate) const NUM_LAYER: usize = 5;
 
-#[cfg(feature = "central")]
+#[cfg(any(feature = "central", all(feature = "wired", feature = "peripheral_left")))]
 #[rustfmt::skip]
 pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
     [

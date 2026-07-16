@@ -6,17 +6,22 @@ description = "Keyboard firmware written in Rust"
 edition = "2024"
 
 [features]
-default = ["central"]
+default = ["central", "ble"]
 central = ["rmk/host"]
 peripheral_left = []
 peripheral_right = []
 reset = []
 usb_logging = ["rmk/usb_log"]
+# BLE between halves and a BLE dongle acting as USB host (the default setup).
+ble = ["rmk/nrf52840_ble", "rmk/adafruit_bl", "dep:nrf-sdc", "dep:nrf-mpsl", "dep:bt-hci"]
+# Fully wired: halves are linked by a wired serial connection instead of BLE,
+# and the central half plugs directly into USB instead of a BLE dongle.
+wired = []
 
 [[bin]]
 name = "central"
 path = "src/central.rs"
-required-features = ["central"]
+required-features = ["central", "ble"]
 
 [[bin]]
 name = "peripheral_left"
@@ -45,26 +50,24 @@ lto = "fat"
 
 [dependencies]
 rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "62957531dbd74fd1e904858b2f885a9b7523b5e3", features = [
-  "nrf52840_ble",
   "split",
   "storage",
   "async_matrix",
-  "adafruit_bl",
   "vial",
   "vial_lock",
 ], default-features = false }
-nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", features = [
+nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", optional = true, features = [
   "defmt",
   "peripheral",
   "central",
   "nrf52840",
 ] }
-nrf-mpsl = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", features = [
+nrf-mpsl = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", optional = true, features = [
   "defmt",
   "critical-section-impl",
   "nrf52840",
 ] }
-bt-hci = { version = "0.6", features = ["defmt"] }
+bt-hci = { version = "0.6", optional = true, features = ["defmt"] }
 
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
@@ -88,6 +91,8 @@ embassy-executor = { version = "0.9", features = [
   "executor-thread",
 ] }
 embassy-usb = "0.5.1"
+embassy-embedded-hal = "0.5"
+embedded-io-async = "0.6"
 usbd-hid = "0.10.0"
 defmt = "1.0"
 defmt-rtt = "1.0"

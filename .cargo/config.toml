@@ -1,12 +1,12 @@
-[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+# XIAO BLE nRF52840 peripherals
+[target.thumbv7em-none-eabihf]
 runner = "probe-rs run --chip nRF52840_xxAA"
-# runner = "./run.sh"
-
-# Use flip-link overflow check: https://github.com/knurling-rs/flip-link
 linker = "flip-link"
 
-[build]
-target = "thumbv7em-none-eabihf" # Cortex-M4F and Cortex-M7F (with FPU)
+# Raspberry Pi Pico W (RP2040) central
+[target.thumbv6m-none-eabi]
+runner = "probe-rs run --chip RP2040"
+linker = "flip-link"
 
 [env]
 DEFMT_LOG = "debug"

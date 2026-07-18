@@ -1,8 +1,9 @@
 #[cfg(feature = "central")]
 use rmk::types::{
-    action::{Action, KeyAction, MorseMode, MorseProfile},
+    action::{Action, KeyAction},
     keycode::{HidKeyCode, KeyCode},
     modifier::ModifierCombination,
+    morse::{MorseMode, MorseProfile},
 };
 #[cfg(feature = "central")]
 use rmk::{a, k, mo, to, wm};

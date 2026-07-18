@@ -25,6 +25,8 @@ args = [
   "+${RUST_VER}",
   "objcopy",
   "--release",
+  "--target",
+  "thumbv6m-none-eabi",
   "--bin",
   "central",
   "--no-default-features",
@@ -47,6 +49,8 @@ args = [
   "+${RUST_VER}",
   "objcopy",
   "--release",
+  "--target",
+  "thumbv7em-none-eabihf",
   "--bin",
   "peripheral_left",
   "--no-default-features",
@@ -69,6 +73,8 @@ args = [
   "+${RUST_VER}",
   "objcopy",
   "--release",
+  "--target",
+  "thumbv7em-none-eabihf",
   "--bin",
   "peripheral_right",
   "--no-default-features",
@@ -94,7 +100,7 @@ args = [
   "--output-path",
   "rmk-central.uf2",
   "--family",
-  "nrf52840",
+  "rp2040",
 ]
 dependencies = ["objcopy-central"]
 

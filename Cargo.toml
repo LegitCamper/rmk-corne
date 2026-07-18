@@ -7,9 +7,31 @@ edition = "2024"
 
 [features]
 default = ["central"]
-central = ["rmk/host"]
-peripheral_left = []
-peripheral_right = []
+central = [
+  "dep:embassy-rp",
+  "dep:cyw43",
+  "dep:cyw43-pio",
+  "rmk/pico_w_ble",
+  "rmk/rp2040",
+]
+peripheral_left = [
+  "dep:embassy-nrf",
+  "dep:nrf-sdc",
+  "dep:nrf-mpsl",
+  "rmk/nrf52840_ble",
+  "rmk/adafruit_bl",
+  "embassy-time/tick-hz-32_768",
+  "embassy-time/defmt-timestamp-uptime",
+]
+peripheral_right = [
+  "dep:embassy-nrf",
+  "dep:nrf-sdc",
+  "dep:nrf-mpsl",
+  "rmk/nrf52840_ble",
+  "rmk/adafruit_bl",
+  "embassy-time/tick-hz-32_768",
+  "embassy-time/defmt-timestamp-uptime",
+]
 reset = []
 usb_logging = ["rmk/usb_log"]
 
@@ -44,36 +66,17 @@ overflow-checks = false
 lto = "fat"
 
 [dependencies]
-rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "62957531dbd74fd1e904858b2f885a9b7523b5e3", features = [
-  "nrf52840_ble",
+rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "1156f82bddecda6d3bcfce60adb7a6504083b9e8", features = [
   "split",
   "storage",
   "async_matrix",
-  "adafruit_bl",
   "vial",
   "vial_lock",
+  "watchdog",
 ], default-features = false }
-nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", features = [
-  "defmt",
-  "peripheral",
-  "central",
-  "nrf52840",
-] }
-nrf-mpsl = { git = "https://github.com/alexmoon/nrf-sdc", rev = "11d5c3c", features = [
-  "defmt",
-  "critical-section-impl",
-  "nrf52840",
-] }
-bt-hci = { version = "0.6", features = ["defmt"] }
 
-cortex-m = "0.7.7"
-cortex-m-rt = "0.7.5"
-embassy-time = { version = "0.5", features = [
-  "tick-hz-32_768",
-  "defmt",
-  "defmt-timestamp-uptime",
-] }
-embassy-nrf = { version = "0.8", features = [
+# nRF52840 (XIAO BLE peripherals) only
+embassy-nrf = { version = "0.11", features = [
   "defmt",
   "nrf52840",
   "time-driver-rtc1",
@@ -81,24 +84,74 @@ embassy-nrf = { version = "0.8", features = [
   "unstable-pac",
   "nfc-pins-as-gpio",
   "time",
-] }
-embassy-executor = { version = "0.9", features = [
+], optional = true }
+nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc", rev = "abe49d22ebfc85fae134eb082fbfddf752016a55", features = [
   "defmt",
-  "arch-cortex-m",
+  "peripheral",
+  "central",
+  "nrf52840",
+], optional = true }
+nrf-mpsl = { git = "https://github.com/alexmoon/nrf-sdc", rev = "abe49d22ebfc85fae134eb082fbfddf752016a55", features = [
+  "defmt",
+  "critical-section-impl",
+  "nrf52840",
+], optional = true }
+
+# RP2040 (Pico W central) only
+embassy-rp = { version = "0.10", features = [
+  "rp2040",
+  "defmt",
+  "time-driver",
+  "critical-section-impl",
+  "unstable-pac",
+], optional = true }
+cyw43 = { version = "0.7", features = [
+  "defmt",
+  "firmware-logs",
+  "bluetooth",
+], optional = true }
+cyw43-pio = { version = "0.10.0", features = ["defmt"], optional = true }
+
+bt-hci = { version = "0.9", features = ["defmt"] }
+
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.5"
+portable-atomic = { version = "1", features = ["critical-section"] }
+embassy-time = { version = "0.5", features = ["defmt"] }
+embassy-executor = { version = "0.10", features = [
+  "defmt",
+  "platform-cortex-m",
   "executor-thread",
 ] }
-embassy-usb = "0.5.1"
-usbd-hid = "0.10.0"
 defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
 static_cell = "2"
 
-rand = { version = "0.8.4", default-features = false }
-rand_core = { version = "0.6" }
-rand_chacha = { version = "0.3", default-features = false }
-
 [build-dependencies]
 xz2 = "0.1.7"
 json = "0.12"
 const-gen = "1.6"
+reqwest = { version = "0.13", features = ["blocking"] }
+
+# cyw43 needs bt-hci 0.9, which is only available from embassy git (crates.io cyw43
+# 0.7.0 still depends on an older bt-hci). Pin the whole embassy graph to the same
+# rev so there's a single copy of each embassy crate (otherwise the git and crates.io
+# `embassy-time` native libs collide via `links`, and shared types diverge). This
+# applies to the nRF52840 peripheral build too since embassy-time/embassy-sync/etc
+# are shared crate names across both chip families.
+[patch.crates-io]
+cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-time-queue-utils = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
+embassy-nrf = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }

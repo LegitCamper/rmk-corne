@@ -1,3 +1,6 @@
 /target
 *.hex
 *.uf2
+
+# Downloaded by build.rs for the RP2040 central's cyw43 (wifi/BT) driver
+/cyw43-firmware

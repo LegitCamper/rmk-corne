@@ -4,9 +4,13 @@
 #[macro_use]
 mod macros;
 
+mod battery_led;
+use battery_led::BatteryLowLedController;
+
 use defmt::{info, unwrap};
+use defmt_rtt as _;
 use embassy_executor::Spawner;
-use embassy_nrf::gpio::{Input, Output};
+use embassy_nrf::gpio::{Input, Level, Output, OutputDrive};
 use embassy_nrf::interrupt::{self, InterruptExt};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, SAADC};
@@ -15,19 +19,19 @@ use embassy_nrf::{Peri, bind_interrupts, rng};
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
-use rand_chacha::ChaCha12Rng;
-use rand_core::SeedableRng;
+use panic_probe as _;
 use rmk::ble::build_ble_stack;
-use rmk::channel::EVENT_CHANNEL;
 use rmk::config::StorageConfig;
 use rmk::debounce::default_debouncer::DefaultDebouncer;
-use rmk::futures::future::join;
+use rmk::futures::future::join3;
+use rmk::input_device::adc::{AnalogEventType, NrfAdc};
+use rmk::input_device::battery::BatteryProcessor;
 use rmk::matrix::Matrix;
 use rmk::split::peripheral::run_rmk_split_peripheral;
 use rmk::storage::new_storage_for_split_peripheral;
-use rmk::{HostResources, run_devices};
+use rmk::watchdog::Nrf52Watchdog;
+use rmk::{HostResources, run_all};
 use static_cell::StaticCell;
-use {defmt_rtt as _, panic_probe as _};
 
 mod keymap;
 use keymap::{COL, ROW};
@@ -63,11 +67,11 @@ fn build_sdc<'d, const N: usize>(
     mem: &'d mut sdc::Mem<N>,
 ) -> Result<nrf_sdc::SoftdeviceController<'d>, nrf_sdc::Error> {
     sdc::Builder::new()?
-        .support_adv()?
-        .support_peripheral()?
-        .support_dle_peripheral()?
-        .support_phy_update_peripheral()?
-        .support_le_2m_phy()?
+        .support_adv()
+        .support_peripheral()
+        .support_dle_peripheral()
+        .support_phy_update_peripheral()
+        .support_le_2m_phy()
         .peripheral_count(1)?
         .buffer_cfg(L2CAP_MTU as u16, L2CAP_MTU as u16, L2CAP_TXQ, L2CAP_RXQ)?
         .build(p, rng, mpsl, mem)
@@ -75,7 +79,6 @@ fn build_sdc<'d, const N: usize>(
 
 /// Initializes the SAADC peripheral in single-ended mode on the given pin.
 fn init_adc(adc_pin: AnyInput, adc: Peri<'static, SAADC>) -> Saadc<'static, 1> {
-    // Then we initialize the ADC. We are only using one channel in this example.
     let config = saadc::Config::default();
     let channel_cfg = saadc::ChannelConfig::single_ended(adc_pin.degrade_saadc());
     interrupt::SAADC.set_priority(interrupt::Priority::P3);
@@ -117,34 +120,35 @@ async fn main(spawner: Spawner) {
         lfclk_cfg,
         SESSION_MEM.init(mpsl::SessionMem::new())
     )));
-    spawner.must_spawn(mpsl_task(&*mpsl));
+    spawner.spawn(mpsl_task(&*mpsl).unwrap());
     let sdc_p = sdc::Peripherals::new(
         p.PPI_CH17, p.PPI_CH18, p.PPI_CH20, p.PPI_CH21, p.PPI_CH22, p.PPI_CH23, p.PPI_CH24,
         p.PPI_CH25, p.PPI_CH26, p.PPI_CH27, p.PPI_CH28, p.PPI_CH29,
     );
     let mut rng = rng::Rng::new(p.RNG, Irqs);
-    let mut rng_generator = ChaCha12Rng::from_rng(&mut rng).unwrap();
     let mut sdc_mem = sdc::Mem::<4624>::new();
     let sdc = unwrap!(build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem));
 
     let mut resources = HostResources::new();
-    let stack = build_ble_stack(sdc, ble_addr(), &mut rng_generator, &mut resources).await;
+    let stack = build_ble_stack(sdc, ble_addr(), &mut resources).await;
 
-    // Initialize the ADC. We are only using one channel for detecting battery level
-    let adc_pin = p.P0_05.degrade_saadc();
+    // XIAO BLE's onboard battery-sense circuit: P0.14 enables the voltage
+    // divider onto the ADC pin P0.31 (held low for the peripheral's whole
+    // lifetime -- the extra idle current is negligible next to the radio).
+    let _battery_read_enable = Output::new(p.P0_14, Level::Low, OutputDrive::Standard);
+    let adc_pin = p.P0_31.degrade_saadc();
     let saadc = init_adc(adc_pin, p.SAADC);
-    // Wait for ADC calibration.
     saadc.calibrate().await;
 
     #[cfg(feature = "peripheral_left")]
     let (row_pins, col_pins) = config_matrix_pins_nrf!(peripherals: p,
-        input: [P0_22, P0_24, P1_00, P0_11],
-        output:  [P0_31, P0_29, P0_02, P1_15, P1_13, P1_11]);
+        input: [P0_02, P0_03, P0_28, P0_29],
+        output: [P0_04, P0_05, P1_11, P1_12, P1_13, P1_14]);
 
     #[cfg(not(feature = "peripheral_left"))]
     let (row_pins, col_pins) = config_matrix_pins_nrf!(peripherals: p,
-        input: [P0_22, P0_24, P1_00, P0_11],
-        output:  [P1_11, P1_13, P1_15, P0_02, P0_29, P0_31]);
+        input: [P0_02, P0_03, P0_28, P0_29],
+        output: [P1_14, P1_13, P1_12, P1_11, P0_05, P0_04]);
 
     // Initialize flash
     // nRF52840's bootloader starts from 0xF4000(976K)
@@ -164,15 +168,37 @@ async fn main(spawner: Spawner) {
     let debouncer = DefaultDebouncer::new();
     let mut matrix = Matrix::<_, _, _, ROW, { COL / 2 }, true>::new(row_pins, col_pins, debouncer);
 
+    // Battery monitoring for peripheral
+    let mut adc_device = NrfAdc::new(
+        saadc,
+        [AnalogEventType::Battery],
+        [0],
+        embassy_time::Duration::from_secs(12),
+        None,
+    );
+    let mut battery_processor = BatteryProcessor::new(2000, 2806);
+
+    let mut watchdog_runner = Nrf52Watchdog::default_runner(p.WDT);
+
+    // Blinks this half's onboard (red) LED faster the lower its own battery
+    // gets, so it's obvious which half is actually dying.
+    let battery_led_pin = Output::new(p.P0_26, Level::High, OutputDrive::Standard);
+    let mut battery_low_led = BatteryLowLedController::new(battery_led_pin, true);
+
     // Start
-    join(
-        run_devices! (
-            (matrix) => EVENT_CHANNEL, // Peripheral uses EVENT_CHANNEL to send events to central
+    join3(
+        run_all!(
+            matrix,
+            adc_device,
+            storage,
+            watchdog_runner,
+            battery_low_led
         ),
+        run_all!(battery_processor),
         #[cfg(feature = "peripheral_left")] // left
-        run_rmk_split_peripheral(0, &stack, &mut storage),
+        run_rmk_split_peripheral(0, &stack),
         #[cfg(not(feature = "peripheral_left"))] // right
-        run_rmk_split_peripheral(1, &stack, &mut storage),
+        run_rmk_split_peripheral(1, &stack),
     )
     .await;
 }

@@ -4,145 +4,97 @@
 #[macro_use]
 mod macros;
 
-mod battery_led;
 mod keymap;
-use battery_led::BatteryLowLedController;
-use keymap::{COL, NUM_LAYER, ROW};
+mod vial;
+use keymap::{COL, ROW};
+use vial::{VIAL_KEYBOARD_DEF, VIAL_KEYBOARD_ID};
 
-use defmt::{info, unwrap};
+use bt_hci::controller::ExternalController;
+use cyw43::aligned_bytes;
+use cyw43_pio::PioSpi;
+use defmt_rtt as _;
 use embassy_executor::Spawner;
-use embassy_nrf::gpio::{Level, Output, OutputDrive};
-use embassy_nrf::mode::Async;
-use embassy_nrf::peripherals::{RNG, USBD};
-use embassy_nrf::saadc::{self};
-use embassy_nrf::usb::Driver;
-use embassy_nrf::usb::vbus_detect::HardwareVbusDetect;
-use embassy_nrf::{bind_interrupts, rng, usb};
-use embassy_usb::class::hid::{Config as HidConfig, HidWriter, State as HidState};
-use nrf_mpsl::Flash;
-use nrf_sdc::mpsl::MultiprotocolServiceLayer;
-use nrf_sdc::{self as sdc, mpsl};
-use rand_chacha::ChaCha12Rng;
-use rand_core::SeedableRng;
-use rmk::ble::build_ble_stack;
-use rmk::channel::CONTROLLER_CHANNEL;
-use rmk::config::{BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig};
-use rmk::controller::EventController as _;
-use rmk::controller::PollingController as _;
-use rmk::controller::led_indicator::KeyboardIndicatorController;
-use rmk::event::ControllerEvent;
-use rmk::futures::future::{join, join5};
-use rmk::input_device::Runnable;
-use rmk::keyboard::Keyboard;
-use rmk::split::ble::central::{read_peripheral_addresses, scan_peripherals};
+use embassy_rp::bind_interrupts;
+use embassy_rp::flash::{Async, Flash};
+use embassy_rp::gpio::{Level, Output};
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, PIO0, USB};
+use embassy_rp::pio::{self, Pio};
+use embassy_rp::usb::{self, Driver};
+use panic_probe as _;
+use rmk::ble::{BleTransport, build_ble_stack};
+use rmk::config::{
+    BehaviorConfig, BleBatteryConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig,
+    VialConfig,
+};
+use rmk::futures::future::join;
+use rmk::host::HostService;
+use rmk::keymap::KeymapData;
+use rmk::processor::builtin::wpm::WpmProcessor;
+use rmk::split::ble::central::scan_peripherals;
 use rmk::split::central::run_peripheral_manager;
-use rmk::types::action::EncoderAction;
-use rmk::{HostResources, initialize_encoder_keymap_and_storage, run_rmk};
+use rmk::usb::UsbTransport;
+use rmk::watchdog::Rp2040Watchdog;
+use rmk::{HostResources, initialize_keymap_and_storage, run_all};
 use static_cell::StaticCell;
-use usbd_hid::descriptor::AsInputReport;
-use usbd_hid::descriptor::SerializedDescriptor;
-use usbd_hid::descriptor::gen_hid_descriptor;
-
-use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
-    USBD => usb::InterruptHandler<USBD>;
-    SAADC => saadc::InterruptHandler;
-    RNG => rng::InterruptHandler<RNG>;
-    EGU0_SWI0 => nrf_sdc::mpsl::LowPrioInterruptHandler;
-    CLOCK_POWER => nrf_sdc::mpsl::ClockInterruptHandler, usb::vbus_detect::InterruptHandler;
-    RADIO => nrf_sdc::mpsl::HighPrioInterruptHandler;
-    TIMER0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
-    RTC0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
+    USBCTRL_IRQ => usb::InterruptHandler<USB>;
+    PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
+    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<DMA_CH0>, embassy_rp::dma::InterruptHandler<DMA_CH1>, embassy_rp::dma::InterruptHandler<DMA_CH2>;
 });
 
 #[embassy_executor::task]
-async fn mpsl_task(mpsl: &'static MultiprotocolServiceLayer<'static>) -> ! {
-    mpsl.run().await
+async fn cyw43_task(
+    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>, cyw43::Cyw43439>,
+) -> ! {
+    runner.run().await
 }
 
-/// How many outgoing L2CAP buffers per link
-const L2CAP_TXQ: u8 = 3;
-
-/// How many incoming L2CAP buffers per link
-const L2CAP_RXQ: u8 = 3;
-
-/// Size of L2CAP packets
-const L2CAP_MTU: usize = 251;
-
-fn build_sdc<'d, const N: usize>(
-    p: nrf_sdc::Peripherals<'d>,
-    rng: &'d mut rng::Rng<Async>,
-    mpsl: &'d MultiprotocolServiceLayer,
-    mem: &'d mut sdc::Mem<N>,
-) -> Result<nrf_sdc::SoftdeviceController<'d>, nrf_sdc::Error> {
-    sdc::Builder::new()?
-        .support_scan()?
-        .support_central()?
-        .support_adv()?
-        .support_peripheral()?
-        .support_dle_peripheral()?
-        .support_dle_central()?
-        .support_phy_update_central()?
-        .support_phy_update_peripheral()?
-        .support_le_2m_phy()?
-        .central_count(2)? // The number of peripherals
-        .peripheral_count(1)?
-        .buffer_cfg(L2CAP_MTU as u16, L2CAP_MTU as u16, L2CAP_TXQ, L2CAP_RXQ)?
-        .build(p, rng, mpsl, mem)
-}
-
-fn ble_addr() -> [u8; 6] {
-    let ficr = embassy_nrf::pac::FICR;
-    let high = u64::from(ficr.deviceid(1).read());
-    let addr = high << 32 | u64::from(ficr.deviceid(0).read());
-    let addr = addr | 0x0000_c000_0000_0000;
-    unwrap!(addr.to_le_bytes()[..6].try_into())
-}
+/// Total flash size on the Pico W.
+const FLASH_SIZE: usize = 2 * 1024 * 1024;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    info!("Hello RMK BLE!");
-    // Initialize the peripherals and nrf-sdc controller
-    let mut nrf_config = embassy_nrf::config::Config::default();
-    nrf_config.dcdc.reg0_voltage = Some(embassy_nrf::config::Reg0Voltage::_3V3);
-    nrf_config.dcdc.reg0 = true;
-    nrf_config.dcdc.reg1 = true;
-    let p = embassy_nrf::init(nrf_config);
-    let mpsl_p =
-        mpsl::Peripherals::new(p.RTC0, p.TIMER0, p.TEMP, p.PPI_CH19, p.PPI_CH30, p.PPI_CH31);
-    let lfclk_cfg = mpsl::raw::mpsl_clock_lfclk_cfg_t {
-        source: mpsl::raw::MPSL_CLOCK_LF_SRC_RC as u8,
-        rc_ctiv: mpsl::raw::MPSL_RECOMMENDED_RC_CTIV as u8,
-        rc_temp_ctiv: mpsl::raw::MPSL_RECOMMENDED_RC_TEMP_CTIV as u8,
-        accuracy_ppm: mpsl::raw::MPSL_DEFAULT_CLOCK_ACCURACY_PPM as u16,
-        skip_wait_lfclk_started: mpsl::raw::MPSL_DEFAULT_SKIP_WAIT_LFCLK_STARTED != 0,
-    };
-    static MPSL: StaticCell<MultiprotocolServiceLayer> = StaticCell::new();
-    static SESSION_MEM: StaticCell<mpsl::SessionMem<1>> = StaticCell::new();
-    let mpsl = MPSL.init(unwrap!(mpsl::MultiprotocolServiceLayer::with_timeslots(
-        mpsl_p,
-        Irqs,
-        lfclk_cfg,
-        SESSION_MEM.init(mpsl::SessionMem::new())
-    )));
-    spawner.must_spawn(mpsl_task(&*mpsl));
-    let sdc_p = sdc::Peripherals::new(
-        p.PPI_CH17, p.PPI_CH18, p.PPI_CH20, p.PPI_CH21, p.PPI_CH22, p.PPI_CH23, p.PPI_CH24,
-        p.PPI_CH25, p.PPI_CH26, p.PPI_CH27, p.PPI_CH28, p.PPI_CH29,
+    let p = embassy_rp::init(Default::default());
+
+    // IMPORTANT: these firmware blobs are downloaded by build.rs into
+    // ./cyw43-firmware -- see the "reset"/"usb_logging" note in the README
+    // if you need to build offline.
+    let fw = aligned_bytes!("../cyw43-firmware/43439A0.bin");
+    let clm = aligned_bytes!("../cyw43-firmware/43439A0_clm.bin");
+    let btfw = aligned_bytes!("../cyw43-firmware/43439A0_btfw.bin");
+    let nvram = aligned_bytes!("../cyw43-firmware/nvram_rp2040.bin");
+
+    // Fixed Pico W wiring: the CYW43439 wifi/BT chip sits behind PIO-driven SPI.
+    let pwr = Output::new(p.PIN_23, Level::Low);
+    let cs = Output::new(p.PIN_25, Level::High);
+    let mut pio = Pio::new(p.PIO0, Irqs);
+    let spi = PioSpi::new(
+        &mut pio.common,
+        pio.sm0,
+        cyw43_pio::DEFAULT_CLOCK_DIVIDER,
+        pio.irq0,
+        cs,
+        p.PIN_24,
+        p.PIN_29,
+        embassy_rp::dma::Channel::new(p.DMA_CH0, Irqs),
+        embassy_rp::dma::Channel::new(p.DMA_CH2, Irqs),
     );
-    let mut rng = rng::Rng::new(p.RNG, Irqs);
-    let mut rng_gen = ChaCha12Rng::from_rng(&mut rng).unwrap();
-    let mut sdc_mem = sdc::Mem::<15472>::new();
-    let sdc = unwrap!(build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem));
-    let mut host_resources = HostResources::new();
-    let stack = build_ble_stack(sdc, ble_addr(), &mut rng_gen, &mut host_resources).await;
+
+    static STATE: StaticCell<cyw43::State> = StaticCell::new();
+    let state = STATE.init(cyw43::State::new());
+    let (_net_device, bt_device, mut control, runner) =
+        cyw43::new_with_bluetooth(state, pwr, spi, fw, btfw, nvram).await;
+    spawner.spawn(cyw43_task(runner).unwrap());
+    control.init(clm).await;
+
+    let controller: ExternalController<_, 10> = ExternalController::new(bt_device);
 
     // Initialize usb driver
-    let driver = Driver::new(p.USBD, Irqs, HardwareVbusDetect::new(Irqs));
+    let driver = Driver::new(p.USB, Irqs);
 
-    // Initialize flash
-    let flash = Flash::take(mpsl, p.NVMC);
+    // Use internal flash to emulate eeprom
+    let flash = Flash::<_, Async, FLASH_SIZE>::new(p.FLASH, p.DMA_CH1, Irqs);
 
     // Keyboard config
     let keyboard_device_config = DeviceConfig {
@@ -150,11 +102,15 @@ async fn main(spawner: Spawner) {
         pid: 0x4643,
         manufacturer: "LegitCamper",
         product_name: "RMK Keyboard",
-        serial_number: "na",
+        ..DeviceConfig::default()
     };
+    let vial_config = VialConfig::new(VIAL_KEYBOARD_ID, VIAL_KEYBOARD_DEF, &[(0, 0), (0, 11)]);
+    // The central is a USB-powered dongle with no battery of its own -- only
+    // the split peripherals report battery level.
+    let ble_battery_config = BleBatteryConfig::disabled();
     let storage_config = StorageConfig {
-        start_addr: 0xA0000,
-        num_sectors: 6,
+        start_addr: 0x100000, // Start from 1M
+        num_sectors: 32,
         #[cfg(feature = "reset")]
         clear_storage: true,
         #[cfg(feature = "reset")]
@@ -163,54 +119,65 @@ async fn main(spawner: Spawner) {
     };
     let rmk_config = RmkConfig {
         device_config: keyboard_device_config,
+        vial_config,
+        ble_battery_config,
         storage_config,
-        ..Default::default()
     };
 
     // Initialize keyboard stuffs
     // Initialize the storage and keymap
-    let mut default_keymap = keymap::get_default_keymap();
+    let mut keymap_data = KeymapData::new(keymap::get_default_keymap());
     let mut behavior_config = BehaviorConfig::default();
     behavior_config.morse.enable_flow_tap = true;
-    let mut key_config = PositionalConfig::default();
-    let mut encoder_config = [{
-        EncoderAction::default();
-        [] as [EncoderAction; 0]
-    }; NUM_LAYER];
-    let (keymap, mut storage) = initialize_encoder_keymap_and_storage::<_, ROW, COL, NUM_LAYER, 0>(
-        &mut default_keymap,
-        &mut encoder_config,
+    let per_key_config = PositionalConfig::default();
+    let (keymap, mut storage) = initialize_keymap_and_storage(
+        &mut keymap_data,
         flash,
         &storage_config,
         &mut behavior_config,
-        &mut key_config,
+        &per_key_config,
     )
     .await;
 
-    // Initialize the matrix and keyboard
-    let mut keyboard = Keyboard::new(&keymap);
+    // Initialize the keyboard
+    let mut keyboard = rmk::keyboard::Keyboard::new(&keymap);
+    let host_ctx = rmk::host::KeyboardContext::new(&keymap);
+    let mut host_service = HostService::new(&host_ctx, &rmk_config);
 
-    // Read peripheral address from storage
-    let peripheral_addrs =
-        read_peripheral_addresses::<2, _, ROW, COL, NUM_LAYER, 0>(&mut storage).await;
+    // Read peripheral addresses from storage
+    let peripheral_addrs = storage.read_peripheral_addresses::<2>().await;
 
-    // Blinks the XIAO BLE's onboard (red) LED faster the lower the peripherals'
-    // battery gets, using battery levels relayed from the split halves over BLE.
-    let mut battery_low_led = BatteryLowLedController::new(
-        Output::new(p.P0_26, Level::High, OutputDrive::Standard),
-        true,
-    );
+    let mut host_resources = HostResources::new();
+    let stack = build_ble_stack(controller, ble_addr(), &mut host_resources).await;
+
+    let mut usb_transport = UsbTransport::new(driver, rmk_config.device_config);
+    let mut ble_transport = BleTransport::new(&stack, rmk_config).await;
+    let mut wpm_processor = WpmProcessor::new();
+    let mut watchdog_runner =
+        Rp2040Watchdog::default_runner(embassy_rp::watchdog::Watchdog::new(p.WATCHDOG));
 
     // Start
     join(
-        keyboard.run(),
-        join5(
+        run_all!(
+            storage,
+            usb_transport,
+            ble_transport,
+            wpm_processor,
+            keyboard,
+            host_service,
+            watchdog_runner
+        ),
+        join(
             scan_peripherals(&stack, &peripheral_addrs),
-            run_peripheral_manager::<ROW, COL, 0, 0, _>(0, &peripheral_addrs, &stack),
-            run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
-            run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
-            battery_low_led.polling_loop(),
+            join(
+                run_peripheral_manager::<ROW, COL, 0, 0, _>(0, &peripheral_addrs, &stack),
+                run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
+            ),
         ),
     )
     .await;
+}
+
+fn ble_addr() -> [u8; 6] {
+    [0x18, 0xe2, 0x21, 0x88, 0xc0, 0xc7]
 }

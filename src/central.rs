@@ -4,12 +4,14 @@
 #[macro_use]
 mod macros;
 
+mod battery_led;
 mod keymap;
+use battery_led::BatteryLowLedController;
 use keymap::{COL, NUM_LAYER, ROW};
 
 use defmt::{info, unwrap};
 use embassy_executor::Spawner;
-use embassy_nrf::gpio::Output;
+use embassy_nrf::gpio::{Level, Output, OutputDrive};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, USBD};
 use embassy_nrf::saadc::{self};
@@ -26,9 +28,10 @@ use rmk::ble::build_ble_stack;
 use rmk::channel::CONTROLLER_CHANNEL;
 use rmk::config::{BehaviorConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig};
 use rmk::controller::EventController as _;
+use rmk::controller::PollingController as _;
 use rmk::controller::led_indicator::KeyboardIndicatorController;
 use rmk::event::ControllerEvent;
-use rmk::futures::future::{join, join4};
+use rmk::futures::future::{join, join5};
 use rmk::input_device::Runnable;
 use rmk::keyboard::Keyboard;
 use rmk::split::ble::central::{read_peripheral_addresses, scan_peripherals};
@@ -191,14 +194,22 @@ async fn main(spawner: Spawner) {
     let peripheral_addrs =
         read_peripheral_addresses::<2, _, ROW, COL, NUM_LAYER, 0>(&mut storage).await;
 
+    // Blinks the XIAO BLE's onboard (red) LED faster the lower the peripherals'
+    // battery gets, using battery levels relayed from the split halves over BLE.
+    let mut battery_low_led = BatteryLowLedController::new(
+        Output::new(p.P0_26, Level::High, OutputDrive::Standard),
+        true,
+    );
+
     // Start
     join(
         keyboard.run(),
-        join4(
+        join5(
             scan_peripherals(&stack, &peripheral_addrs),
             run_peripheral_manager::<ROW, COL, 0, 0, _>(0, &peripheral_addrs, &stack),
             run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
             run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
+            battery_low_led.polling_loop(),
         ),
     )
     .await;

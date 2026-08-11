@@ -8,11 +8,13 @@ edition = "2024"
 [features]
 default = ["central"]
 central = [
-  "dep:embassy-rp",
-  "dep:cyw43",
-  "dep:cyw43-pio",
-  "rmk/pico_w_ble",
-  "rmk/rp2040",
+  "dep:embassy-nrf",
+  "dep:nrf-sdc",
+  "dep:nrf-mpsl",
+  "rmk/nrf52840_ble",
+  "rmk/adafruit_bl",
+  "embassy-time/tick-hz-32_768",
+  "embassy-time/defmt-timestamp-uptime",
 ]
 peripheral_left = [
   "dep:embassy-nrf",
@@ -97,21 +99,6 @@ nrf-mpsl = { git = "https://github.com/alexmoon/nrf-sdc", rev = "abe49d22ebfc85f
   "nrf52840",
 ], optional = true }
 
-# RP2040 (Pico W central) only
-embassy-rp = { version = "0.10", features = [
-  "rp2040",
-  "defmt",
-  "time-driver",
-  "critical-section-impl",
-  "unstable-pac",
-], optional = true }
-cyw43 = { version = "0.7", features = [
-  "defmt",
-  "firmware-logs",
-  "bluetooth",
-], optional = true }
-cyw43-pio = { version = "0.10.0", features = ["defmt"], optional = true }
-
 bt-hci = { version = "0.9", features = ["defmt"] }
 
 cortex-m = "0.7.7"
@@ -132,26 +119,3 @@ static_cell = "2"
 xz2 = "0.1.7"
 json = "0.12"
 const-gen = "1.6"
-reqwest = { version = "0.13", features = ["blocking"] }
-
-# cyw43 needs bt-hci 0.9, which is only available from embassy git (crates.io cyw43
-# 0.7.0 still depends on an older bt-hci). Pin the whole embassy graph to the same
-# rev so there's a single copy of each embassy crate (otherwise the git and crates.io
-# `embassy-time` native libs collide via `links`, and shared types diverge). This
-# applies to the nRF52840 peripheral build too since embassy-time/embassy-sync/etc
-# are shared crate names across both chip families.
-[patch.crates-io]
-cyw43 = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-time-driver = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-time-queue-utils = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-hal-internal = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }
-embassy-nrf = { git = "https://github.com/embassy-rs/embassy", rev = "e372d1e1e624032ddc5ea932ac4c368b28ccb0dd" }

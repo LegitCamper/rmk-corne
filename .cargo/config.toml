@@ -1,12 +1,10 @@
-# XIAO BLE nRF52840 peripherals
+# XIAO BLE nRF52840 (central + peripherals)
 [target.thumbv7em-none-eabihf]
 runner = "probe-rs run --chip nRF52840_xxAA"
 linker = "flip-link"
 
-# Raspberry Pi Pico W (RP2040) central
-[target.thumbv6m-none-eabi]
-runner = "probe-rs run --chip RP2040"
-linker = "flip-link"
+[build]
+target = "thumbv7em-none-eabihf"
 
 [env]
 DEFMT_LOG = "debug"

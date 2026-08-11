@@ -5,7 +5,9 @@
 mod macros;
 
 mod battery_led;
+mod pairing_led;
 use battery_led::BatteryLowLedController;
+use pairing_led::PairingLedController;
 
 use defmt::{info, unwrap};
 use defmt_rtt as _;
@@ -23,7 +25,7 @@ use panic_probe as _;
 use rmk::ble::build_ble_stack;
 use rmk::config::StorageConfig;
 use rmk::debounce::default_debouncer::DefaultDebouncer;
-use rmk::futures::future::join3;
+use rmk::futures::future::join;
 use rmk::input_device::adc::{AnalogEventType, NrfAdc};
 use rmk::input_device::battery::BatteryProcessor;
 use rmk::matrix::Matrix;
@@ -126,7 +128,12 @@ async fn main(spawner: Spawner) {
         p.PPI_CH25, p.PPI_CH26, p.PPI_CH27, p.PPI_CH28, p.PPI_CH29,
     );
     let mut rng = rng::Rng::new(p.RNG, Irqs);
-    let mut sdc_mem = sdc::Mem::<4624>::new();
+    // nrf-sdc computes the exact buffer size it needs internally from the
+    // L2CAP/role config below; 4624 (copied from an upstream example with a
+    // different config) was 72 bytes short here -- confirmed via RTT log
+    // ("Memory buffer too small. 4696 bytes needed."). Round up a bit past
+    // the reported minimum for headroom against small config changes.
+    let mut sdc_mem = sdc::Mem::<4736>::new();
     let sdc = unwrap!(build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem));
 
     let mut resources = HostResources::new();
@@ -140,15 +147,20 @@ async fn main(spawner: Spawner) {
     let saadc = init_adc(adc_pin, p.SAADC);
     saadc.calibrate().await;
 
+    // Column pins per the board's actual schematic/ZMK reference config
+    // (JonMuller/gerbers corne-choc-xiao): col0 is the NFC2 pin (P0.10,
+    // usable as GPIO via the `nfc-pins-as-gpio` feature already enabled),
+    // col1-5 are P1.15 down to P1.11. The right half is the mirror image
+    // (col0..col5 run P1.11 up to P1.15 then P0.10).
     #[cfg(feature = "peripheral_left")]
     let (row_pins, col_pins) = config_matrix_pins_nrf!(peripherals: p,
         input: [P0_02, P0_03, P0_28, P0_29],
-        output: [P0_04, P0_05, P1_11, P1_12, P1_13, P1_14]);
+        output: [P0_10, P1_15, P1_14, P1_13, P1_12, P1_11]);
 
     #[cfg(not(feature = "peripheral_left"))]
     let (row_pins, col_pins) = config_matrix_pins_nrf!(peripherals: p,
         input: [P0_02, P0_03, P0_28, P0_29],
-        output: [P1_14, P1_13, P1_12, P1_11, P0_05, P0_04]);
+        output: [P1_11, P1_12, P1_13, P1_14, P1_15, P0_10]);
 
     // Initialize flash
     // nRF52840's bootloader starts from 0xF4000(976K)
@@ -185,16 +197,24 @@ async fn main(spawner: Spawner) {
     let battery_led_pin = Output::new(p.P0_26, Level::High, OutputDrive::Standard);
     let mut battery_low_led = BatteryLowLedController::new(battery_led_pin, true);
 
+    // Flashes green at boot ("I'm alive"), then blinks blue while trying to
+    // pair/reconnect to the central, off once connected.
+    let pairing_led_green_pin = Output::new(p.P0_30, Level::High, OutputDrive::Standard);
+    let pairing_led_blue_pin = Output::new(p.P0_06, Level::High, OutputDrive::Standard);
+    let mut pairing_led =
+        PairingLedController::new(pairing_led_green_pin, pairing_led_blue_pin, true);
+
     // Start
-    join3(
+    join(
         run_all!(
             matrix,
             adc_device,
             storage,
             watchdog_runner,
-            battery_low_led
+            battery_processor,
+            battery_low_led,
+            pairing_led
         ),
-        run_all!(battery_processor),
         #[cfg(feature = "peripheral_left")] // left
         run_rmk_split_peripheral(0, &stack),
         #[cfg(not(feature = "peripheral_left"))] // right

@@ -9,17 +9,17 @@ mod vial;
 use keymap::{COL, ROW};
 use vial::{VIAL_KEYBOARD_DEF, VIAL_KEYBOARD_ID};
 
-use bt_hci::controller::ExternalController;
-use cyw43::aligned_bytes;
-use cyw43_pio::PioSpi;
+use defmt::{info, unwrap};
 use defmt_rtt as _;
 use embassy_executor::Spawner;
-use embassy_rp::bind_interrupts;
-use embassy_rp::flash::{Async, Flash};
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, PIO0, USB};
-use embassy_rp::pio::{self, Pio};
-use embassy_rp::usb::{self, Driver};
+use embassy_nrf::mode::Async;
+use embassy_nrf::peripherals::{RNG, USBD};
+use embassy_nrf::usb::Driver;
+use embassy_nrf::usb::vbus_detect::HardwareVbusDetect;
+use embassy_nrf::{bind_interrupts, rng, usb};
+use nrf_mpsl::Flash;
+use nrf_sdc::mpsl::MultiprotocolServiceLayer;
+use nrf_sdc::{self as sdc, mpsl};
 use panic_probe as _;
 use rmk::ble::{BleTransport, build_ble_stack};
 use rmk::config::{
@@ -33,68 +33,116 @@ use rmk::processor::builtin::wpm::WpmProcessor;
 use rmk::split::ble::central::scan_peripherals;
 use rmk::split::central::run_peripheral_manager;
 use rmk::usb::UsbTransport;
-use rmk::watchdog::Rp2040Watchdog;
+use rmk::watchdog::Nrf52Watchdog;
 use rmk::{HostResources, initialize_keymap_and_storage, run_all};
 use static_cell::StaticCell;
 
 bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => usb::InterruptHandler<USB>;
-    PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
-    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<DMA_CH0>, embassy_rp::dma::InterruptHandler<DMA_CH1>, embassy_rp::dma::InterruptHandler<DMA_CH2>;
+    USBD => usb::InterruptHandler<USBD>;
+    RNG => rng::InterruptHandler<RNG>;
+    EGU0_SWI0 => nrf_sdc::mpsl::LowPrioInterruptHandler;
+    CLOCK_POWER => nrf_sdc::mpsl::ClockInterruptHandler, usb::vbus_detect::InterruptHandler;
+    RADIO => nrf_sdc::mpsl::HighPrioInterruptHandler;
+    TIMER0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
+    RTC0 => nrf_sdc::mpsl::HighPrioInterruptHandler;
 });
 
 #[embassy_executor::task]
-async fn cyw43_task(
-    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>, cyw43::Cyw43439>,
-) -> ! {
-    runner.run().await
+async fn mpsl_task(mpsl: &'static MultiprotocolServiceLayer<'static>) -> ! {
+    mpsl.run().await
 }
 
-/// Total flash size on the Pico W.
-const FLASH_SIZE: usize = 2 * 1024 * 1024;
+/// How many outgoing L2CAP buffers per link
+const L2CAP_TXQ: u8 = 3;
+
+/// How many incoming L2CAP buffers per link
+const L2CAP_RXQ: u8 = 3;
+
+/// Size of L2CAP packets
+const L2CAP_MTU: usize = 251;
+
+/// Unlike the peripherals' `build_sdc` (peripheral-only role), the central
+/// also scans for and connects to both split peripherals as a BLE central,
+/// on top of advertising itself to the host -- hence the extra
+/// support_scan/support_central/central_count(2) and the much larger SDC
+/// memory buffer below.
+fn build_sdc<'d, const N: usize>(
+    p: nrf_sdc::Peripherals<'d>,
+    rng: &'d mut rng::Rng<Async>,
+    mpsl: &'d MultiprotocolServiceLayer,
+    mem: &'d mut sdc::Mem<N>,
+) -> Result<nrf_sdc::SoftdeviceController<'d>, nrf_sdc::Error> {
+    sdc::Builder::new()?
+        .support_scan()
+        .support_central()
+        .support_adv()
+        .support_peripheral()
+        .support_dle_peripheral()
+        .support_dle_central()
+        .support_phy_update_central()
+        .support_phy_update_peripheral()
+        .support_le_2m_phy()
+        .central_count(2)? // The number of split peripherals
+        .peripheral_count(1)?
+        .buffer_cfg(L2CAP_MTU as u16, L2CAP_MTU as u16, L2CAP_TXQ, L2CAP_RXQ)?
+        .build(p, rng, mpsl, mem)
+}
+
+fn ble_addr() -> [u8; 6] {
+    let ficr = embassy_nrf::pac::FICR;
+    let high = u64::from(ficr.deviceid(1).read());
+    let addr = high << 32 | u64::from(ficr.deviceid(0).read());
+    let addr = addr | 0x0000_c000_0000_0000;
+    unwrap!(addr.to_le_bytes()[..6].try_into())
+}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
-
-    // IMPORTANT: these firmware blobs are downloaded by build.rs into
-    // ./cyw43-firmware -- see the "reset"/"usb_logging" note in the README
-    // if you need to build offline.
-    let fw = aligned_bytes!("../cyw43-firmware/43439A0.bin");
-    let clm = aligned_bytes!("../cyw43-firmware/43439A0_clm.bin");
-    let btfw = aligned_bytes!("../cyw43-firmware/43439A0_btfw.bin");
-    let nvram = aligned_bytes!("../cyw43-firmware/nvram_rp2040.bin");
-
-    // Fixed Pico W wiring: the CYW43439 wifi/BT chip sits behind PIO-driven SPI.
-    let pwr = Output::new(p.PIN_23, Level::Low);
-    let cs = Output::new(p.PIN_25, Level::High);
-    let mut pio = Pio::new(p.PIO0, Irqs);
-    let spi = PioSpi::new(
-        &mut pio.common,
-        pio.sm0,
-        cyw43_pio::DEFAULT_CLOCK_DIVIDER,
-        pio.irq0,
-        cs,
-        p.PIN_24,
-        p.PIN_29,
-        embassy_rp::dma::Channel::new(p.DMA_CH0, Irqs),
-        embassy_rp::dma::Channel::new(p.DMA_CH2, Irqs),
+    info!("Hello RMK BLE!");
+    // Initialize the peripherals and nrf-sdc controller
+    let mut nrf_config = embassy_nrf::config::Config::default();
+    nrf_config.dcdc.reg0_voltage = Some(embassy_nrf::config::Reg0Voltage::_3V3);
+    nrf_config.dcdc.reg0 = true;
+    nrf_config.dcdc.reg1 = true;
+    let p = embassy_nrf::init(nrf_config);
+    let mpsl_p =
+        mpsl::Peripherals::new(p.RTC0, p.TIMER0, p.TEMP, p.PPI_CH19, p.PPI_CH30, p.PPI_CH31);
+    let lfclk_cfg = mpsl::raw::mpsl_clock_lfclk_cfg_t {
+        source: mpsl::raw::MPSL_CLOCK_LF_SRC_RC as u8,
+        rc_ctiv: mpsl::raw::MPSL_RECOMMENDED_RC_CTIV as u8,
+        rc_temp_ctiv: mpsl::raw::MPSL_RECOMMENDED_RC_TEMP_CTIV as u8,
+        accuracy_ppm: mpsl::raw::MPSL_DEFAULT_CLOCK_ACCURACY_PPM as u16,
+        skip_wait_lfclk_started: mpsl::raw::MPSL_DEFAULT_SKIP_WAIT_LFCLK_STARTED != 0,
+    };
+    static MPSL: StaticCell<MultiprotocolServiceLayer> = StaticCell::new();
+    static SESSION_MEM: StaticCell<mpsl::SessionMem<1>> = StaticCell::new();
+    let mpsl = MPSL.init(unwrap!(mpsl::MultiprotocolServiceLayer::with_timeslots(
+        mpsl_p,
+        Irqs,
+        lfclk_cfg,
+        SESSION_MEM.init(mpsl::SessionMem::new())
+    )));
+    spawner.spawn(mpsl_task(&*mpsl).unwrap());
+    let sdc_p = sdc::Peripherals::new(
+        p.PPI_CH17, p.PPI_CH18, p.PPI_CH20, p.PPI_CH21, p.PPI_CH22, p.PPI_CH23, p.PPI_CH24,
+        p.PPI_CH25, p.PPI_CH26, p.PPI_CH27, p.PPI_CH28, p.PPI_CH29,
     );
+    let mut rng = rng::Rng::new(p.RNG, Irqs);
+    // Central needs a much bigger SDC buffer than a peripheral: it juggles
+    // both an advertising/GATT link to the host and two scan+central links
+    // to the split halves at once.
+    let mut sdc_mem = sdc::Mem::<15472>::new();
+    let sdc = unwrap!(build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem));
 
-    static STATE: StaticCell<cyw43::State> = StaticCell::new();
-    let state = STATE.init(cyw43::State::new());
-    let (_net_device, bt_device, mut control, runner) =
-        cyw43::new_with_bluetooth(state, pwr, spi, fw, btfw, nvram).await;
-    spawner.spawn(cyw43_task(runner).unwrap());
-    control.init(clm).await;
+    let mut host_resources = HostResources::new();
+    let stack = build_ble_stack(sdc, ble_addr(), &mut host_resources).await;
 
-    let controller: ExternalController<_, 10> = ExternalController::new(bt_device);
-
-    // Initialize usb driver
-    let driver = Driver::new(p.USB, Irqs);
+    // Initialize usb driver. The central is a plain XIAO BLE dongle -- no
+    // matrix of its own, just USB<->BLE bridging for the two split halves.
+    let driver = Driver::new(p.USBD, Irqs, HardwareVbusDetect::new(Irqs));
 
     // Use internal flash to emulate eeprom
-    let flash = Flash::<_, Async, FLASH_SIZE>::new(p.FLASH, p.DMA_CH1, Irqs);
+    let flash = Flash::take(mpsl, p.NVMC);
 
     // Keyboard config
     let keyboard_device_config = DeviceConfig {
@@ -109,8 +157,8 @@ async fn main(spawner: Spawner) {
     // the split peripherals report battery level.
     let ble_battery_config = BleBatteryConfig::disabled();
     let storage_config = StorageConfig {
-        start_addr: 0x100000, // Start from 1M
-        num_sectors: 32,
+        start_addr: 0xA0000, // 640K, same layout as the peripherals
+        num_sectors: 32,     // 128K
         #[cfg(feature = "reset")]
         clear_storage: true,
         #[cfg(feature = "reset")]
@@ -147,14 +195,10 @@ async fn main(spawner: Spawner) {
     // Read peripheral addresses from storage
     let peripheral_addrs = storage.read_peripheral_addresses::<2>().await;
 
-    let mut host_resources = HostResources::new();
-    let stack = build_ble_stack(controller, ble_addr(), &mut host_resources).await;
-
     let mut usb_transport = UsbTransport::new(driver, rmk_config.device_config);
     let mut ble_transport = BleTransport::new(&stack, rmk_config).await;
     let mut wpm_processor = WpmProcessor::new();
-    let mut watchdog_runner =
-        Rp2040Watchdog::default_runner(embassy_rp::watchdog::Watchdog::new(p.WATCHDOG));
+    let mut watchdog_runner = Nrf52Watchdog::default_runner(p.WDT);
 
     // Start
     join(
@@ -176,8 +220,4 @@ async fn main(spawner: Spawner) {
         ),
     )
     .await;
-}
-
-fn ble_addr() -> [u8; 6] {
-    [0x18, 0xe2, 0x21, 0x88, 0xc0, 0xc7]
 }

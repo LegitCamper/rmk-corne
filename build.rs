@@ -24,33 +24,19 @@ fn main() {
     println!("cargo:rerun-if-changed=vial.json");
     generate_vial_config();
 
-    // Central (Pico W / RP2040) and peripherals (XIAO BLE / nRF52840) are two
-    // different target architectures built from this same crate, each with its
-    // own memory layout. Pick the right one from the `TARGET` triple cargo
-    // passes to the build script.
-    let target = env::var("TARGET").unwrap();
-    let is_rp2040 = target.starts_with("thumbv6m");
-    let memory_x: &[u8] = if is_rp2040 {
-        include_bytes!("memory_rp2040.x")
-    } else {
-        include_bytes!("memory_nrf52840.x")
-    };
-
     // Put `memory.x` in our output directory and ensure it's
     // on the linker search path.
     let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());
     File::create(out.join("memory.x"))
         .unwrap()
-        .write_all(memory_x)
+        .write_all(include_bytes!("memory_nrf52840.x"))
         .unwrap();
     println!("cargo:rustc-link-search={}", out.display());
 
     // By default, Cargo will re-run a build script whenever
-    // any file in the project changes. By specifying these files
-    // here, we ensure the build script is only re-run when they change.
+    // any file in the project changes. By specifying this file
+    // here, we ensure the build script is only re-run when it changes.
     println!("cargo:rerun-if-changed=memory_nrf52840.x");
-    println!("cargo:rerun-if-changed=memory_rp2040.x");
-    println!("cargo:rerun-if-env-changed=TARGET");
 
     // Specify linker arguments.
 
@@ -64,12 +50,6 @@ fn main() {
 
     // Set the extra linker script from defmt
     println!("cargo:rustc-link-arg=-Tdefmt.x");
-
-    // RP2040's BOOT2 stage needs the extra linker script from embassy-rp.
-    if is_rp2040 {
-        println!("cargo:rustc-link-arg-bins=-Tlink-rp.x");
-        download_cyw43_firmware();
-    }
 }
 
 fn generate_vial_config() {
@@ -100,41 +80,4 @@ fn generate_vial_config() {
     .map(|s| "#[allow(clippy::redundant_static_lifetimes)]\n".to_owned() + s.as_str())
     .join("\n");
     fs::write(out_file, const_declarations).unwrap();
-}
-
-/// Downloads the CYW43439 wifi/BT firmware blobs the Pico W's `cyw43` driver
-/// needs at runtime. Only relevant for the RP2040 central.
-fn download_cyw43_firmware() {
-    let download_folder = "cyw43-firmware";
-    let url_base = "https://github.com/embassy-rs/embassy/raw/refs/heads/main/cyw43-firmware";
-    let file_names = [
-        "43439A0.bin",
-        "43439A0_btfw.bin",
-        "43439A0_clm.bin",
-        "nvram_rp2040.bin",
-        "LICENSE-permissive-binary-license-1.0.txt",
-        "README.md",
-    ];
-
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed={}", download_folder);
-    fs::create_dir_all(download_folder).expect("Failed to create download directory");
-
-    for file in file_names {
-        let url = format!("{}/{}", url_base, file);
-        if Path::new(download_folder).join(file).exists() {
-            continue;
-        }
-        match reqwest::blocking::get(&url) {
-            Ok(response) => {
-                let content = response.bytes().expect("Failed to read file content");
-                let file_path = PathBuf::from(download_folder).join(file);
-                fs::write(file_path, &content).expect("Failed to write file");
-            }
-            Err(err) => panic!(
-                "Failed to download the cyw43 firmware from {}: {}, required for the central",
-                url, err
-            ),
-        }
-    }
 }

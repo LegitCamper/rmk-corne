@@ -26,7 +26,7 @@ args = [
   "objcopy",
   "--release",
   "--target",
-  "thumbv6m-none-eabi",
+  "thumbv7em-none-eabihf",
   "--bin",
   "central",
   "--no-default-features",
@@ -100,7 +100,7 @@ args = [
   "--output-path",
   "rmk-central.uf2",
   "--family",
-  "rp2040",
+  "nrf52840",
 ]
 dependencies = ["objcopy-central"]
 

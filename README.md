@@ -2,27 +2,28 @@
 
 This configuration is for personal reference, showing the build options for the **Corne 6-column keyboard** with the following specifics:
 
-* **Peripheral halves: Seeed XIAO BLE (nRF52840)**
-* **Central/dongle: Raspberry Pi Pico W (RP2040 + CYW43439)**
+* **All three boards: Seeed XIAO BLE (nRF52840)** -- two keyboard halves plus
+  a third XIAO acting as a matrix-less USB dongle for the central role
 * **No rotary encoders**
 * **Hardware watchdog enabled**
 * **USB dongle setup**
 
-Central and peripherals are two different chip families built from the same
-crate (`rmk-corne`), so they target different architectures:
+Central and peripherals are all the same chip (nRF52840) built from the same
+crate (`rmk-corne`), so all three binaries target the same architecture
+(`thumbv7em-none-eabihf`). The central has no matrix of its own -- it just
+bridges USB (to the host) and BLE (to the two split halves).
 
-| Binary                              | Board            | Target triple           |
-|--------------------------------------|-------------------|--------------------------|
-| `central`                            | Pico W (RP2040)   | `thumbv6m-none-eabi`     |
-| `peripheral_left` / `peripheral_right` | XIAO BLE (nRF52840) | `thumbv7em-none-eabihf`  |
+`cargo make uf2` builds and packages all three.
 
-`cargo make uf2` builds and packages all three; `.cargo/config.toml` and
-`Makefile.toml` already pass the right `--target` per binary.
+## Status LEDs (XIAO BLE onboard RGB LED)
 
-## Battery LED
+Each peripheral half drives all three channels of its onboard RGB LED:
 
-Each peripheral half blinks its own onboard (red, `P0.26`) LED faster the
-lower *its own* battery gets
+* **Red (`P0.26`)** blinks faster the lower *its own* battery gets.
+* **Green (`P0.30`)** flashes a few times right at boot as an "I'm alive"
+  signal, then hands off to blue.
+* **Blue (`P0.06`)** blinks while the half is advertising/trying to
+  (re)connect to the central, and turns off once connected.
 
 ## Peripheral battery sensing
 
@@ -39,14 +40,18 @@ a multimeter reading on real hardware and adjust if it's off.
 
 ## Peripheral matrix wiring (XIAO BLE)
 
-Both halves use the same physical pins; column order is mirrored between
-left/right so key order comes out correct on each hand. `D10`/`P1.15` is
-left free.
+Pins match this board's actual schematic/ZMK reference config
+([JonMuller/gerbers corne-choc-xiao](https://github.com/JonMuller/gerbers/tree/main/corne-choc-xiao)),
+not a generic XIAO `D0`-`D10` breakout numbering. Column order is mirrored
+between left/right so key order comes out correct on each hand. `col0` is
+the NFC2 pin (`P0.10`), usable as GPIO via the `nfc-pins-as-gpio`
+`embassy-nrf` feature already enabled.
 
-| Function | XIAO pin | nRF52840 GPIO |
-|----------|----------|----------------|
-| Row 0–3  | D0–D3    | P0.02, P0.03, P0.28, P0.29 |
-| Col 0–5 (left) / Col 5–0 (right) | D4–D9 | P0.04, P0.05, P1.11, P1.12, P1.13, P1.14 |
+| Function | nRF52840 GPIO |
+|----------|----------------|
+| Row 0–3  | P0.02, P0.03, P0.28, P0.29 |
+| Col 0–5 (left)  | P0.10, P1.15, P1.14, P1.13, P1.12, P1.11 |
+| Col 0–5 (right) | P1.11, P1.12, P1.13, P1.14, P1.15, P0.10 |
 
 ## Vial
 
@@ -58,9 +63,9 @@ positions `(0,0)` and `(0,11)`); adjust `VialConfig::new(...)` in
 ## rmk / watchdog
 
 `rmk` is pinned to a recent revision that includes hardware watchdog support
-(`rmk::watchdog::Rp2040Watchdog` on the central, `rmk::watchdog::Nrf52Watchdog`
-on the peripherals), wired into each binary's `run_all!` task list. If either
-MCU's firmware hangs, the watchdog resets it automatically.
+(`rmk::watchdog::Nrf52Watchdog`, wired into each binary's `run_all!` task
+list). If any of the three MCUs' firmware hangs, the watchdog resets it
+automatically.
 
 ## Build Options
 
@@ -70,7 +75,7 @@ MCU's firmware hangs, the watchdog resets it automatically.
 * Usage:
 
 ```bash
-RMK_LOG=y cargo make uf2 --release
+RMK_LOG=y cargo make uf2
 ```
 
 ### RMK_RESET
@@ -79,24 +84,18 @@ RMK_LOG=y cargo make uf2 --release
 * Usage:
 
 ```bash
-RMK_RESET=y cargo make uf2 --release
+RMK_RESET=y cargo make uf2
 ```
 
 ### Both Together
 
 ```bash
-RMK_LOG=y RMK_RESET=y cargo make uf2 --release
+RMK_LOG=y RMK_RESET=y cargo make uf2
 ```
 
 ## Flashing
 
-* Peripherals (XIAO BLE) use the Adafruit nRF52 UF2 bootloader — double-tap
-  reset (or use the `adafruit_bl` bootloader-jump key) to get to the UF2
-  drive, then copy `rmk-peripheral-left.uf2` / `rmk-peripheral-right.uf2` over.
-* Central (Pico W) uses the RP2040 UF2 bootloader — hold BOOTSEL while
-  plugging in (or double-tap reset once running RMK firmware), then copy
-  `rmk-central.uf2` over.
-
-Building the central for the first time requires network access: `build.rs`
-downloads the CYW43439 firmware blobs into `./cyw43-firmware/` (matching
-upstream `rmk`'s `pi_pico_w_ble_split` example) the first time it's needed.
+All three boards (central, `peripheral_left`, `peripheral_right`) use the
+Adafruit nRF52 UF2 bootloader — double-tap reset (or use the `adafruit_bl`
+bootloader-jump key) to get to the UF2 drive, then copy the matching
+`rmk-*.uf2` file over.

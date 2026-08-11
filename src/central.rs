@@ -25,8 +25,8 @@ use nrf_sdc::{self as sdc, mpsl};
 use panic_probe as _;
 use rmk::ble::BleTransport;
 use rmk::config::{
-    BehaviorConfig, BleBatteryConfig, DeviceConfig, LockConfig, MorsesConfig, PositionalConfig,
-    RmkConfig, StorageConfig,
+    BehaviorConfig, BleBatteryConfig, DeviceConfig, Hand, LockConfig, MorsesConfig,
+    PositionalConfig, RmkConfig, StorageConfig,
 };
 use rmk::host::HostService;
 use rmk::split::PeripheralMatrixConfig;
@@ -184,13 +184,24 @@ async fn main(spawner: Spawner) {
             enable_flow_tap: true,
             profiles: VecInner::from_array([
                 MorseProfile::new(Some(true), Some(MorseMode::PermissiveHold), Some(175), None),
-                MorseProfile::new(None, None, Some(175), None),
+                MorseProfile::new(None, Some(MorseMode::HoldOnOtherPress), Some(175), None),
             ]),
             ..Default::default()
         },
         ..Default::default()
     };
-    let per_key_config = PositionalConfig::default();
+    // Columns 0..COL/2 are the left peripheral, COL/2..COL the right one
+    // (matches the `PeripheralMatrixConfig` col_offsets below) -- needed for
+    // `unilateral_tap` to tell same-hand rolls from cross-hand HRM chords.
+    let mut hand = [[Hand::Left; COL]; ROW];
+    for row in hand.iter_mut() {
+        for (col, h) in row.iter_mut().enumerate() {
+            if col >= COL / 2 {
+                *h = Hand::Right;
+            }
+        }
+    }
+    let per_key_config = PositionalConfig::new(hand);
     let (keymap, mut storage) = initialize_keymap_and_storage(
         &mut keymap_data,
         flash,

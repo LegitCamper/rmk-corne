@@ -1928,6 +1928,7 @@ dependencies = [
  "embassy-executor",
  "embassy-nrf",
  "embassy-time",
+ "log",
  "nrf-mpsl",
  "nrf-sdc",
  "panic-probe",

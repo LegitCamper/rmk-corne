@@ -7,9 +7,9 @@ mod macros;
 mod keymap;
 mod search_led;
 use keymap::{COL, ROW};
+use rmk::heapless::vec::VecInner;
 use search_led::SearchingLedController;
 
-use defmt::{info, unwrap};
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_nrf::gpio::{Level, Output, OutputDrive};
@@ -18,14 +18,15 @@ use embassy_nrf::peripherals::{RNG, USBD};
 use embassy_nrf::usb::Driver;
 use embassy_nrf::usb::vbus_detect::HardwareVbusDetect;
 use embassy_nrf::{bind_interrupts, rng, usb};
+use log::info;
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
 use panic_probe as _;
 use rmk::ble::BleTransport;
 use rmk::config::{
-    BehaviorConfig, BleBatteryConfig, DeviceConfig, LockConfig, PositionalConfig, RmkConfig,
-    StorageConfig,
+    BehaviorConfig, BleBatteryConfig, DeviceConfig, LockConfig, MorsesConfig, PositionalConfig,
+    RmkConfig, StorageConfig,
 };
 use rmk::host::HostService;
 use rmk::split::PeripheralMatrixConfig;
@@ -91,7 +92,7 @@ fn ble_addr() -> [u8; 6] {
     let high = u64::from(ficr.deviceid(1).read());
     let addr = high << 32 | u64::from(ficr.deviceid(0).read());
     let addr = addr | 0x0000_c000_0000_0000;
-    unwrap!(addr.to_le_bytes()[..6].try_into())
+    addr.to_le_bytes()[..6].try_into().unwrap()
 }
 
 #[embassy_executor::main]
@@ -114,12 +115,15 @@ async fn main(spawner: Spawner) {
     };
     static MPSL: StaticCell<MultiprotocolServiceLayer> = StaticCell::new();
     static SESSION_MEM: StaticCell<mpsl::SessionMem<1>> = StaticCell::new();
-    let mpsl = MPSL.init(unwrap!(mpsl::MultiprotocolServiceLayer::with_timeslots(
-        mpsl_p,
-        Irqs,
-        lfclk_cfg,
-        SESSION_MEM.init(mpsl::SessionMem::new())
-    )));
+    let mpsl = MPSL.init(
+        mpsl::MultiprotocolServiceLayer::with_timeslots(
+            mpsl_p,
+            Irqs,
+            lfclk_cfg,
+            SESSION_MEM.init(mpsl::SessionMem::new()),
+        )
+        .unwrap(),
+    );
     spawner.spawn(mpsl_task(&*mpsl).unwrap());
     let sdc_p = sdc::Peripherals::new(
         p.PPI_CH17, p.PPI_CH18, p.PPI_CH20, p.PPI_CH21, p.PPI_CH22, p.PPI_CH23, p.PPI_CH24,
@@ -130,7 +134,7 @@ async fn main(spawner: Spawner) {
     // both an advertising/GATT link to the host and two scan+central links
     // to the split halves at once.
     let mut sdc_mem = sdc::Mem::<15472>::new();
-    let sdc = unwrap!(build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem));
+    let sdc = build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem).unwrap();
 
     // Initialize usb driver. The central is a plain XIAO BLE dongle -- no
     // matrix of its own, just USB<->BLE bridging for the two split halves.
@@ -173,25 +177,19 @@ async fn main(spawner: Spawner) {
     // Initialize keyboard stuffs
     // Initialize the storage and keymap
     let mut keymap_data = KeymapData::new(keymap::get_default_keymap());
-    let mut behavior_config = BehaviorConfig::default();
-    behavior_config.morse.enable_flow_tap = true;
-    // Registered in the same order as `keymap::HRM_PROFILE`/`LAYER_PROFILE`,
-    // which `hrm!`/`kol!` in macros.rs reference by index.
-    behavior_config
-        .morse
-        .profiles
-        .push(MorseProfile::new(
-            Some(true),
-            Some(MorseMode::PermissiveHold),
-            Some(175),
-            None,
-        ))
-        .unwrap();
-    behavior_config
-        .morse
-        .profiles
-        .push(MorseProfile::new(None, None, Some(175), None))
-        .unwrap();
+    let mut behavior_config = BehaviorConfig {
+        default_layer: 0,
+        tri_layer: None,
+        morse: MorsesConfig {
+            enable_flow_tap: true,
+            profiles: VecInner::from_array([
+                MorseProfile::new(Some(true), Some(MorseMode::PermissiveHold), Some(175), None),
+                MorseProfile::new(None, None, Some(175), None),
+            ]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     let per_key_config = PositionalConfig::default();
     let (keymap, mut storage) = initialize_keymap_and_storage(
         &mut keymap_data,
@@ -238,8 +236,6 @@ async fn main(spawner: Spawner) {
     let search_led_pin = Output::new(p.P0_06, Level::High, OutputDrive::Standard);
     let mut search_led = SearchingLedController::new(search_led_pin, true);
 
-    // Start. Peripheral scanning/pairing now happens inside `ble_transport`
-    // itself -- no separate scan/manager tasks needed.
     run_all!(
         storage,
         usb_transport,

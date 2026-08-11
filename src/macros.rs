@@ -12,7 +12,15 @@ macro_rules! config_matrix_pins_nrf {
     };
 }
 
+// position doesn't exist on the pcb (as opposed to k!(No), which is a real key mapped to nothing)
 #[macro_export]
+macro_rules! na {
+    () => {
+        k!(No)
+    };
+}
+
+// home row mods
 macro_rules! hrm {
     ($k: ident, $m: ident) => {
         KeyAction::TapHold(

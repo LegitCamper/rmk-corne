@@ -7,35 +7,15 @@ edition = "2024"
 
 [features]
 default = ["central"]
-central = [
-  "dep:embassy-nrf",
-  "dep:nrf-sdc",
-  "dep:nrf-mpsl",
-  "rmk/nrf52840_ble",
-  "rmk/adafruit_bl",
-  "embassy-time/tick-hz-32_768",
-  "embassy-time/defmt-timestamp-uptime",
-]
-peripheral_left = [
-  "dep:embassy-nrf",
-  "dep:nrf-sdc",
-  "dep:nrf-mpsl",
-  "rmk/nrf52840_ble",
-  "rmk/adafruit_bl",
-  "embassy-time/tick-hz-32_768",
-  "embassy-time/defmt-timestamp-uptime",
-]
-peripheral_right = [
-  "dep:embassy-nrf",
-  "dep:nrf-sdc",
-  "dep:nrf-mpsl",
-  "rmk/nrf52840_ble",
-  "rmk/adafruit_bl",
-  "embassy-time/tick-hz-32_768",
-  "embassy-time/defmt-timestamp-uptime",
-]
+central = []
+peripheral_left = []
+peripheral_right = []
 reset = []
-usb_logging = ["rmk/usb_log"]
+usb_logging = [
+  "rmk/usb_log",
+  "embassy-time/defmt",
+  "embassy-time/defmt-timestamp-uptime",
+]
 
 [[bin]]
 name = "central"
@@ -74,6 +54,8 @@ rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "1a411da55bcaae80487ce76c
   "async_matrix",
   "rynk",
   "watchdog",
+  "nrf52840_ble",
+  "adafruit_bl",
 ], default-features = false }
 
 # nRF52840 (XIAO BLE peripherals) only
@@ -85,25 +67,25 @@ embassy-nrf = { version = "0.11", features = [
   "unstable-pac",
   "nfc-pins-as-gpio",
   "time",
-], optional = true }
+] }
 nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc", rev = "abe49d22ebfc85fae134eb082fbfddf752016a55", features = [
   "defmt",
   "peripheral",
   "central",
   "nrf52840",
-], optional = true }
+] }
 nrf-mpsl = { git = "https://github.com/alexmoon/nrf-sdc", rev = "abe49d22ebfc85fae134eb082fbfddf752016a55", features = [
   "defmt",
   "critical-section-impl",
   "nrf52840",
-], optional = true }
+] }
 
 bt-hci = { version = "0.9", features = ["defmt"] }
 
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
 portable-atomic = { version = "1", features = ["critical-section"] }
-embassy-time = { version = "0.5", features = ["defmt"] }
+embassy-time = { version = "0.5", features = ["tick-hz-32_768"] }
 embassy-executor = { version = "0.10", features = [
   "defmt",
   "platform-cortex-m",
@@ -113,4 +95,4 @@ defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
 static_cell = "2"
-
+log = "0.4"

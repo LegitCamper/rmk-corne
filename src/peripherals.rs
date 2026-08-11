@@ -9,7 +9,6 @@ mod pairing_led;
 use battery_led::BatteryLowLedController;
 use pairing_led::PairingLedController;
 
-use defmt::{info, unwrap};
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_nrf::gpio::{Input, Level, Output, OutputDrive};
@@ -18,6 +17,7 @@ use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, SAADC};
 use embassy_nrf::saadc::{self, AnyInput, Input as _, Saadc};
 use embassy_nrf::{Peri, bind_interrupts, rng};
+use log::info;
 use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
@@ -92,7 +92,7 @@ fn ble_addr() -> [u8; 6] {
     let high = u64::from(ficr.deviceid(1).read());
     let addr = high << 32 | u64::from(ficr.deviceid(0).read());
     let addr = addr | 0x0000_c000_0000_0000;
-    unwrap!(addr.to_le_bytes()[..6].try_into())
+    addr.to_le_bytes()[..6].try_into().unwrap()
 }
 
 #[embassy_executor::main]
@@ -115,12 +115,15 @@ async fn main(spawner: Spawner) {
     };
     static MPSL: StaticCell<MultiprotocolServiceLayer> = StaticCell::new();
     static SESSION_MEM: StaticCell<mpsl::SessionMem<1>> = StaticCell::new();
-    let mpsl = MPSL.init(unwrap!(mpsl::MultiprotocolServiceLayer::with_timeslots(
-        mpsl_p,
-        Irqs,
-        lfclk_cfg,
-        SESSION_MEM.init(mpsl::SessionMem::new())
-    )));
+    let mpsl = MPSL.init(
+        mpsl::MultiprotocolServiceLayer::with_timeslots(
+            mpsl_p,
+            Irqs,
+            lfclk_cfg,
+            SESSION_MEM.init(mpsl::SessionMem::new()),
+        )
+        .unwrap(),
+    );
     spawner.spawn(mpsl_task(&*mpsl).unwrap());
     let sdc_p = sdc::Peripherals::new(
         p.PPI_CH17, p.PPI_CH18, p.PPI_CH20, p.PPI_CH21, p.PPI_CH22, p.PPI_CH23, p.PPI_CH24,
@@ -133,7 +136,7 @@ async fn main(spawner: Spawner) {
     // ("Memory buffer too small. 4696 bytes needed."). Round up a bit past
     // the reported minimum for headroom against small config changes.
     let mut sdc_mem = sdc::Mem::<4736>::new();
-    let sdc = unwrap!(build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem));
+    let sdc = build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem).unwrap();
 
     // XIAO BLE's onboard battery-sense circuit: P0.14 enables the voltage
     // divider onto the ADC pin P0.31 (held low for the peripheral's whole

@@ -6,10 +6,8 @@ mod macros;
 
 mod keymap;
 mod search_led;
-mod vial;
 use keymap::{COL, ROW};
 use search_led::SearchingLedController;
-use vial::{VIAL_KEYBOARD_DEF, VIAL_KEYBOARD_ID};
 
 use defmt::{info, unwrap};
 use defmt_rtt as _;
@@ -24,20 +22,17 @@ use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
 use panic_probe as _;
-use rmk::ble::{BleTransport, build_ble_stack};
+use rmk::ble::BleTransport;
 use rmk::config::{
-    BehaviorConfig, BleBatteryConfig, DeviceConfig, PositionalConfig, RmkConfig, StorageConfig,
-    VialConfig,
+    BehaviorConfig, BleBatteryConfig, DeviceConfig, LockConfig, PositionalConfig, RmkConfig,
+    StorageConfig,
 };
-use rmk::futures::future::join;
 use rmk::host::HostService;
-use rmk::keymap::KeymapData;
-use rmk::processor::builtin::wpm::WpmProcessor;
-use rmk::split::ble::central::scan_peripherals;
-use rmk::split::central::run_peripheral_manager;
+use rmk::split::PeripheralMatrixConfig;
+use rmk::types::morse::{MorseMode, MorseProfile};
 use rmk::usb::UsbTransport;
 use rmk::watchdog::Nrf52Watchdog;
-use rmk::{HostResources, initialize_keymap_and_storage, run_all};
+use rmk::{KeymapData, initialize_keymap_and_storage, run_all};
 use static_cell::StaticCell;
 
 bind_interrupts!(struct Irqs {
@@ -137,9 +132,6 @@ async fn main(spawner: Spawner) {
     let mut sdc_mem = sdc::Mem::<15472>::new();
     let sdc = unwrap!(build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem));
 
-    let mut host_resources = HostResources::new();
-    let stack = build_ble_stack(sdc, ble_addr(), &mut host_resources).await;
-
     // Initialize usb driver. The central is a plain XIAO BLE dongle -- no
     // matrix of its own, just USB<->BLE bridging for the two split halves.
     let driver = Driver::new(p.USBD, Irqs, HardwareVbusDetect::new(Irqs));
@@ -155,7 +147,9 @@ async fn main(spawner: Spawner) {
         product_name: "RMK Keyboard",
         ..DeviceConfig::default()
     };
-    let vial_config = VialConfig::new(VIAL_KEYBOARD_ID, VIAL_KEYBOARD_DEF, &[(0, 0), (0, 11)]);
+    // Rynk's physical-presence unlock gate: no unlock keys configured, so
+    // dangerous ops (e.g. config writes) stay permanently locked.
+    let lock_config = LockConfig::default();
     // The central is a USB-powered dongle with no battery of its own -- only
     // the split peripherals report battery level.
     let ble_battery_config = BleBatteryConfig::disabled();
@@ -170,7 +164,8 @@ async fn main(spawner: Spawner) {
     };
     let rmk_config = RmkConfig {
         device_config: keyboard_device_config,
-        vial_config,
+        lock_config,
+        layout_blob: &[],
         ble_battery_config,
         storage_config,
     };
@@ -180,6 +175,23 @@ async fn main(spawner: Spawner) {
     let mut keymap_data = KeymapData::new(keymap::get_default_keymap());
     let mut behavior_config = BehaviorConfig::default();
     behavior_config.morse.enable_flow_tap = true;
+    // Registered in the same order as `keymap::HRM_PROFILE`/`LAYER_PROFILE`,
+    // which `hrm!`/`kol!` in macros.rs reference by index.
+    behavior_config
+        .morse
+        .profiles
+        .push(MorseProfile::new(
+            Some(true),
+            Some(MorseMode::PermissiveHold),
+            Some(175),
+            None,
+        ))
+        .unwrap();
+    behavior_config
+        .morse
+        .profiles
+        .push(MorseProfile::new(None, None, Some(175), None))
+        .unwrap();
     let per_key_config = PositionalConfig::default();
     let (keymap, mut storage) = initialize_keymap_and_storage(
         &mut keymap_data,
@@ -192,15 +204,33 @@ async fn main(spawner: Spawner) {
 
     // Initialize the keyboard
     let mut keyboard = rmk::keyboard::Keyboard::new(&keymap);
-    let host_ctx = rmk::host::KeyboardContext::new(&keymap);
-    let mut host_service = HostService::new(&host_ctx, &rmk_config);
+    let host_service = HostService::new(&keymap, &rmk_config);
 
-    // Read peripheral addresses from storage
-    let peripheral_addrs = storage.read_peripheral_addresses::<2>().await;
-
-    let mut usb_transport = UsbTransport::new(driver, rmk_config.device_config);
-    let mut ble_transport = BleTransport::new(&stack, rmk_config).await;
-    let mut wpm_processor = WpmProcessor::new();
+    let mut usb_transport =
+        UsbTransport::new(driver, rmk_config.device_config).with_host_service(&host_service);
+    // Two peripheral halves, both 4x6 at column offset 0/6 within the full
+    // 4x12 keymap -- matches `PeripheralLeft`/`PeripheralRight`'s own matrix.
+    let mut ble_transport = BleTransport::new(
+        sdc,
+        ble_addr(),
+        rmk_config,
+        [
+            PeripheralMatrixConfig {
+                rows: ROW as u8,
+                cols: (COL / 2) as u8,
+                row_offset: 0,
+                col_offset: 0,
+            },
+            PeripheralMatrixConfig {
+                rows: ROW as u8,
+                cols: (COL / 2) as u8,
+                row_offset: 0,
+                col_offset: (COL / 2) as u8,
+            },
+        ],
+    )
+    .with_host_service(&host_service);
+    let mut wpm_processor = rmk::processor::builtin::wpm::WpmProcessor::new();
     let mut watchdog_runner = Nrf52Watchdog::default_runner(p.WDT);
 
     // Blinks blue while still looking for a split peripheral (at boot, or
@@ -208,25 +238,16 @@ async fn main(spawner: Spawner) {
     let search_led_pin = Output::new(p.P0_06, Level::High, OutputDrive::Standard);
     let mut search_led = SearchingLedController::new(search_led_pin, true);
 
-    // Start
-    join(
-        run_all!(
-            storage,
-            usb_transport,
-            ble_transport,
-            wpm_processor,
-            keyboard,
-            host_service,
-            watchdog_runner,
-            search_led
-        ),
-        join(
-            scan_peripherals(&stack, &peripheral_addrs),
-            join(
-                run_peripheral_manager::<ROW, COL, 0, 0, _>(0, &peripheral_addrs, &stack),
-                run_peripheral_manager::<ROW, COL, 0, 6, _>(1, &peripheral_addrs, &stack),
-            ),
-        ),
+    // Start. Peripheral scanning/pairing now happens inside `ble_transport`
+    // itself -- no separate scan/manager tasks needed.
+    run_all!(
+        storage,
+        usb_transport,
+        ble_transport,
+        wpm_processor,
+        keyboard,
+        watchdog_runner,
+        search_led
     )
     .await;
 }

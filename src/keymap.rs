@@ -3,7 +3,6 @@ use rmk::types::{
     action::{Action, KeyAction},
     keycode::{HidKeyCode, KeyCode},
     modifier::ModifierCombination,
-    morse::{MorseMode, MorseProfile},
 };
 #[cfg(feature = "central")]
 use rmk::{a, k, mo, to, wm};
@@ -12,6 +11,13 @@ pub(crate) const COL: usize = 12;
 pub(crate) const ROW: usize = 4;
 #[cfg(feature = "central")]
 pub(crate) const NUM_LAYER: usize = 5;
+
+/// Indices into `BehaviorConfig::morse.profiles`, registered in that order
+/// by `central.rs`. Kept here so `macros.rs` and `central.rs` agree on them.
+#[cfg(feature = "central")]
+pub(crate) const HRM_PROFILE: u8 = 0;
+#[cfg(feature = "central")]
+pub(crate) const LAYER_PROFILE: u8 = 1;
 
 #[cfg(feature = "central")]
 #[rustfmt::skip]

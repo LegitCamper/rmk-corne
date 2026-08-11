@@ -54,13 +54,6 @@ the NFC2 pin (`P0.10`), usable as GPIO via the `nfc-pins-as-gpio`
 | Col 0–5 (left)  | P0.10, P1.15, P1.14, P1.13, P1.12, P1.11 |
 | Col 0–5 (right) | P1.11, P1.12, P1.13, P1.14, P1.15, P0.10 |
 
-## Vial
-
-Vial is enabled (`vial.json` at the project root, compiled in by `build.rs`).
-The unlock combo is the two outer corner keys of the top row (matrix
-positions `(0,0)` and `(0,11)`); adjust `VialConfig::new(...)` in
-`src/central.rs` if you'd rather use different keys.
-
 ## rmk / watchdog
 
 `rmk` is pinned to a recent revision that includes hardware watchdog support

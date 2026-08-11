@@ -68,12 +68,11 @@ overflow-checks = false
 lto = "fat"
 
 [dependencies]
-rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "1156f82bddecda6d3bcfce60adb7a6504083b9e8", features = [
+rmk = { git = "https://github.com/HaoboGu/rmk/", rev = "1a411da55bcaae80487ce76ca00351ef1aee32f5", features = [
   "split",
   "storage",
   "async_matrix",
-  "vial",
-  "vial_lock",
+  "rynk",
   "watchdog",
 ], default-features = false }
 
@@ -115,7 +114,3 @@ defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
 static_cell = "2"
 
-[build-dependencies]
-xz2 = "0.1.7"
-json = "0.12"
-const-gen = "1.6"

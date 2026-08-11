@@ -18,7 +18,7 @@ macro_rules! hrm {
         KeyAction::TapHold(
             Action::Key(KeyCode::Hid(HidKeyCode::$k)),
             Action::Modifier(ModifierCombination::$m),
-            MorseProfile::new(Some(true), Some(MorseMode::PermissiveHold), Some(175), None),
+            crate::keymap::HRM_PROFILE,
         )
     };
 }
@@ -30,7 +30,7 @@ macro_rules! kol {
         KeyAction::TapHold(
             Action::Key(KeyCode::Hid(HidKeyCode::$k)),
             Action::LayerOn($x),
-            MorseProfile::new(None, None, Some(175), None),
+            crate::keymap::LAYER_PROFILE,
         )
     };
 }

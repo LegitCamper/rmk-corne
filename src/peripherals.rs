@@ -22,17 +22,16 @@ use nrf_mpsl::Flash;
 use nrf_sdc::mpsl::MultiprotocolServiceLayer;
 use nrf_sdc::{self as sdc, mpsl};
 use panic_probe as _;
-use rmk::ble::build_ble_stack;
 use rmk::config::StorageConfig;
 use rmk::debounce::default_debouncer::DefaultDebouncer;
 use rmk::futures::future::join;
 use rmk::input_device::adc::{AnalogEventType, NrfAdc};
 use rmk::input_device::battery::BatteryProcessor;
 use rmk::matrix::Matrix;
+use rmk::run_all;
 use rmk::split::peripheral::run_rmk_split_peripheral;
 use rmk::storage::new_storage_for_split_peripheral;
 use rmk::watchdog::Nrf52Watchdog;
-use rmk::{HostResources, run_all};
 use static_cell::StaticCell;
 
 mod keymap;
@@ -136,9 +135,6 @@ async fn main(spawner: Spawner) {
     let mut sdc_mem = sdc::Mem::<4736>::new();
     let sdc = unwrap!(build_sdc(sdc_p, &mut rng, mpsl, &mut sdc_mem));
 
-    let mut resources = HostResources::new();
-    let stack = build_ble_stack(sdc, ble_addr(), &mut resources).await;
-
     // XIAO BLE's onboard battery-sense circuit: P0.14 enables the voltage
     // divider onto the ADC pin P0.31 (held low for the peripheral's whole
     // lifetime -- the extra idle current is negligible next to the radio).
@@ -222,9 +218,9 @@ async fn main(spawner: Spawner) {
             pairing_led
         ),
         #[cfg(feature = "peripheral_left")] // left
-        run_rmk_split_peripheral(0, &stack),
+        run_rmk_split_peripheral(0, sdc, ble_addr()),
         #[cfg(not(feature = "peripheral_left"))] // right
-        run_rmk_split_peripheral(1, &stack),
+        run_rmk_split_peripheral(1, sdc, ble_addr()),
     )
     .await;
 }

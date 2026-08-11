@@ -25,6 +25,12 @@ Each peripheral half drives all three channels of its onboard RGB LED:
 * **Blue (`P0.06`)** blinks while the half is advertising/trying to
   (re)connect to the central, and turns off once connected.
 
+The central (dongle) drives its own **blue (`P0.06`)** the same way, but from
+the other side of the link: it blinks while either split peripheral isn't
+connected -- at boot, or if a half dies/goes out of range later -- and turns
+off once both are connected. A blinking dongle after boot means a half is
+missing.
+
 ## Peripheral battery sensing
 
 The peripherals use the XIAO BLE's onboard battery-sense circuit (ADC on
@@ -32,11 +38,6 @@ The peripherals use the XIAO BLE's onboard battery-sense circuit (ADC on
 divider. There's no separate charging-status GPIO broken out on this circuit
 the way some boards expose one, so only the battery level is reported (no
 charging-state detection).
-
-**The ADC calibration constants in `src/peripherals.rs` (`BatteryProcessor::new(2000, 2806)`)
-are carried over from a different board's divider and haven't been verified
-against the XIAO's actual resistor values** — check reported battery % against
-a multimeter reading on real hardware and adjust if it's off.
 
 ## Peripheral matrix wiring (XIAO BLE)
 

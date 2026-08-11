@@ -180,7 +180,13 @@ async fn main(spawner: Spawner) {
     let debouncer = DefaultDebouncer::new();
     let mut matrix = Matrix::<_, _, _, ROW, { COL / 2 }, true>::new(row_pins, col_pins, debouncer);
 
-    // Battery monitoring for peripheral
+    // Battery monitoring for peripheral. Divider ratio is the XIAO BLE's
+    // actual onboard battery-sense divider (R1=1M to Vbat, R2=510K to GND,
+    // node feeds the ADC) -- confirmed against two independent third-party
+    // XIAO BLE battery-reading libraries that both hardcode this same
+    // 1M/510K divider. The previous (2000, 2806) values were carried over
+    // from a different board's divider ratio and read batteries as far
+    // lower than actual.
     let mut adc_device = NrfAdc::new(
         saadc,
         [AnalogEventType::Battery],
@@ -188,7 +194,7 @@ async fn main(spawner: Spawner) {
         embassy_time::Duration::from_secs(12),
         None,
     );
-    let mut battery_processor = BatteryProcessor::new(2000, 2806);
+    let mut battery_processor = BatteryProcessor::new(510, 1510);
 
     let mut watchdog_runner = Nrf52Watchdog::default_runner(p.WDT);
 

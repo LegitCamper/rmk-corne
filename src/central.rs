@@ -5,13 +5,16 @@
 mod macros;
 
 mod keymap;
+mod search_led;
 mod vial;
 use keymap::{COL, ROW};
+use search_led::SearchingLedController;
 use vial::{VIAL_KEYBOARD_DEF, VIAL_KEYBOARD_ID};
 
 use defmt::{info, unwrap};
 use defmt_rtt as _;
 use embassy_executor::Spawner;
+use embassy_nrf::gpio::{Level, Output, OutputDrive};
 use embassy_nrf::mode::Async;
 use embassy_nrf::peripherals::{RNG, USBD};
 use embassy_nrf::usb::Driver;
@@ -200,6 +203,11 @@ async fn main(spawner: Spawner) {
     let mut wpm_processor = WpmProcessor::new();
     let mut watchdog_runner = Nrf52Watchdog::default_runner(p.WDT);
 
+    // Blinks blue while still looking for a split peripheral (at boot, or
+    // if a half dies/goes out of range later), off once both are connected.
+    let search_led_pin = Output::new(p.P0_06, Level::High, OutputDrive::Standard);
+    let mut search_led = SearchingLedController::new(search_led_pin, true);
+
     // Start
     join(
         run_all!(
@@ -209,7 +217,8 @@ async fn main(spawner: Spawner) {
             wpm_processor,
             keyboard,
             host_service,
-            watchdog_runner
+            watchdog_runner,
+            search_led
         ),
         join(
             scan_peripherals(&stack, &peripheral_addrs),

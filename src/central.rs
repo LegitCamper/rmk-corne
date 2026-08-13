@@ -4,8 +4,10 @@
 #[macro_use]
 mod macros;
 
+mod autocorrect;
 mod keymap;
 mod search_led;
+use autocorrect::AutocorrectProcessor;
 use keymap::{COL, ROW};
 use rmk::heapless::vec::VecInner;
 use search_led::SearchingLedController;
@@ -240,6 +242,7 @@ async fn main(spawner: Spawner) {
     )
     .with_host_service(&host_service);
     let mut wpm_processor = rmk::processor::builtin::wpm::WpmProcessor::new();
+    let mut autocorrect_processor = AutocorrectProcessor::new();
     let mut watchdog_runner = Nrf52Watchdog::default_runner(p.WDT);
 
     // Blinks blue while still looking for a split peripheral (at boot, or
@@ -252,6 +255,7 @@ async fn main(spawner: Spawner) {
         usb_transport,
         ble_transport,
         wpm_processor,
+        autocorrect_processor,
         keyboard,
         watchdog_runner,
         search_led

@@ -183,7 +183,7 @@ async fn main(spawner: Spawner) {
         morse: MorsesConfig {
             enable_flow_tap: true,
             profiles: VecInner::from_array([
-                MorseProfile::new(Some(true), Some(MorseMode::PermissiveHold), Some(175), None),
+                MorseProfile::new(None, Some(MorseMode::HoldOnOtherPress), Some(175), None),
                 MorseProfile::new(None, Some(MorseMode::HoldOnOtherPress), Some(175), None),
             ]),
             ..Default::default()

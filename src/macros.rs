@@ -20,17 +20,6 @@ macro_rules! na {
     };
 }
 
-// home row mods
-macro_rules! hrm {
-    ($k: ident, $m: ident) => {
-        KeyAction::TapHold(
-            Action::Key(KeyCode::Hid(HidKeyCode::$k)),
-            Action::Modifier(ModifierCombination::$m),
-            crate::keymap::HRM_PROFILE,
-        )
-    };
-}
-
 // key or layer
 #[macro_export]
 macro_rules! kol {
@@ -39,6 +28,18 @@ macro_rules! kol {
             Action::Key(KeyCode::Hid(HidKeyCode::$k)),
             Action::LayerOn($x),
             crate::keymap::LAYER_PROFILE,
+        )
+    };
+}
+
+// key or win
+#[macro_export]
+macro_rules! kow {
+    ($k: ident) => {
+        KeyAction::TapHold(
+            Action::Key(KeyCode::Hid(HidKeyCode::$k)),
+            Action::Key(KeyCode::Hid(HidKeyCode::LGui)),
+            crate::keymap::WIN_PROFILE,
         )
     };
 }

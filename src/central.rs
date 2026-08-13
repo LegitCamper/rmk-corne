@@ -185,6 +185,7 @@ async fn main(spawner: Spawner) {
             profiles: VecInner::from_array([
                 MorseProfile::new(None, Some(MorseMode::HoldOnOtherPress), Some(175), None),
                 MorseProfile::new(None, Some(MorseMode::HoldOnOtherPress), Some(175), None),
+                MorseProfile::new(Some(false), Some(MorseMode::Normal), Some(500), Some(200)),
             ]),
             ..Default::default()
         },

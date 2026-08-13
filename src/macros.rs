@@ -43,3 +43,15 @@ macro_rules! kow {
         )
     };
 }
+
+// to gaming
+#[macro_export]
+macro_rules! tog {
+    () => {
+        KeyAction::TapHold(
+            Action::Key(KeyCode::Hid(HidKeyCode::Quote)),
+            Action::LayerToggle(3),
+            crate::keymap::TOGGLE_GAMING,
+        )
+    };
+}
